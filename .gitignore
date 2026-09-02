@@ -1,4 +1,9 @@
 #
 CLAUDE.md
-.venv/
 .claude/agents
+
+__pycache__/
+*.pyc
+.venv/
+.env
+*.db
