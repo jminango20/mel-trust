@@ -1,0 +1,491 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE rdf:RDF [
+    <!ENTITY owl "http://www.w3.org/2002/07/owl#" >
+    <!ENTITY rdf "http://www.w3.org/1999/02/22-rdf-syntax-ns#" >
+    <!ENTITY rdfs "http://www.w3.org/2000/01/rdf-schema#" >
+    <!ENTITY xsd "http://www.w3.org/2001/XMLSchema#" >
+    <!ENTITY prov "http://www.w3.org/ns/prov#" >
+    <!ENTITY sosa "http://www.w3.org/ns/sosa/" >
+    <!ENTITY geo "http://www.opengis.net/ont/geosparql#" >
+    <!ENTITY odrl "http://www.w3.org/ns/odrl/2/" >
+    <!ENTITY vc "https://www.w3.org/2018/credentials/v1" >
+    <!ENTITY dc "http://purl.org/dc/elements/1.1/" >
+    <!ENTITY dcterms "http://purl.org/dc/terms/" >
+    <!ENTITY qudt "http://qudt.org/vocab/unit/" >
+    <!ENTITY skos "http://www.w3.org/2004/02/skos/core#" >
+    <!ENTITY foaf "http://xmlns.com/foaf/0.1/" >
+    <!ENTITY sh "http://www.w3.org/ns/shacl#" >
+]>
+
+<rdf:RDF xmlns="https://w3id.org/agrisemantics/AGRITRUST/bee-extension#"
+         xml:base="https://w3id.org/agrisemantics/AGRITRUST/bee-extension"
+         xmlns:agritrust="https://w3id.org/agrisemantics/AGRITRUST#"
+         xmlns:owl="http://www.w3.org/2002/07/owl#"
+         xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+         xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
+         xmlns:prov="http://www.w3.org/ns/prov#"
+         xmlns:sosa="http://www.w3.org/ns/sosa/"
+         xmlns:geo="http://www.opengis.net/ont/geosparql#"
+         xmlns:odrl="http://www.w3.org/ns/odrl/2/"
+         xmlns:vc="https://www.w3.org/2018/credentials/v1"
+         xmlns:dc="http://purl.org/dc/elements/1.1/"
+         xmlns:dcterms="http://purl.org/dc/terms/"
+         xmlns:qudt="http://qudt.org/vocab/unit/"
+         xmlns:skos="http://www.w3.org/2004/02/skos/core#"
+         xmlns:foaf="http://xmlns.com/foaf/0.1/"
+         xmlns:sh="http://www.w3.org/ns/shacl#">
+
+    <!-- ============================================================================= -->
+    <!-- 1. DECLARAÇÃO DA ONTOLOGIA E METADADOS (Versão 1.0)                             -->
+    <!-- ============================================================================= -->
+
+    <owl:Ontology rdf:about="https://w3id.org/agrisemantics/AGRITRUST/bee-extension">
+        <rdfs:label xml:lang="pt">Extensão Apícola para o Framework AgriTrust</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Modelo semântico para produtos de abelhas do gênero Apis e tribo Meliponini 
+            em conformidade com a tokenização TaaS e Contratos de Dados do Framework AgriTrust.
+            
+            REFERÊNCIAS NORMATIVAS INCORPORADAS:
+            - Portaria SDA/MAPA nº 795, de 10 de maio de 2023 (Normas higiênico-sanitárias para produtos de abelhas)
+            - Portaria SDA/MAPA nº 1.439, de 6 de novembro de 2025 (Altera a Portaria 795/2023)
+            - Instrução Normativa MAPA nº 11, de 20 de outubro de 2000 (RTIQ do Mel - Apis mellifera)
+            - Manual de Emissão de GTA para Abelhas (SDA/MAPA - Defesa Sanitária Animal)
+            
+            CARACTERÍSTICAS TÉCNICAS:
+            - Suporte para interação hands-free via assistentes de voz (Google Assistente, Gemini, Siri)
+            - Modelagem de processos de extração específicos: Sucção, Escoamento, Centrifugação
+            - Parâmetros de destinação condicional para mel nativo: Umidade até 23%, Acidez até 80 mEq/kg
+            - Rastreabilidade de trânsito animal com GTA (Guia de Trânsito Animal)
+            - Conformidade com exigências EUDR (geolocalização e certificações)
+            
+            Versão 1.0 - Baseada na Legislação Brasileira Vigente.
+        </rdfs:comment>
+        <owl:versionInfo>1.0</owl:versionInfo>
+        <owl:versionIRI rdf:resource="https://w3id.org/agrisemantics/AGRITRUST/bee-extension/1.0"/>
+        <owl:imports rdf:resource="https://w3id.org/agrisemantics/AGRITRUST"/>
+        <dc:creator>Ivan Bergier, Juan Minango</dc:creator>
+        <dc:date rdf:datatype="http://www.w3.org/2001/XMLSchema#date">2026-04-14</dc:date>
+        <dc:publisher>Embrapa Digital Agriculture &amp; CPQD</dc:publisher>
+        <dcterms:license rdf:resource="https://creativecommons.org/licenses/by/4.0/"/>
+    </owl:Ontology>
+
+    <!-- ============================================================================= -->
+    <!-- 2. CLASSES ESPECÍFICAS DA APICULTURA                                          -->
+    <!-- ============================================================================= -->
+
+    <!-- 2.1 Produtos Finais (Subclasses de agritrust:Asset) -->
+
+    <owl:Class rdf:about="#HoneyApis">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Asset"/>
+        <rdfs:label xml:lang="pt">Mel de Apis mellifera</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Mel produzido por abelhas do gênero Apis. Regido pela IN 11/2000 e 
+            Portaria SDA/MAPA nº 795/2023. Parâmetros: Umidade máx. 20%, HMF máx. 60 mg/kg,
+            Acidez máx. 50 meq/kg, Diástase mín. 8 Gothe.
+        </rdfs:comment>
+        <skos:related rdf:resource="#Standard_IN11_Apis"/>
+        <skos:related rdf:resource="#Portaria_795_2023"/>
+    </owl:Class>
+
+    <owl:Class rdf:about="#HoneyNativeStinglessBee">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Asset"/>
+        <rdfs:label xml:lang="pt">Mel de Abelha Nativa sem Ferrão</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Mel produzido por espécies da tribo Meliponini (Jataí, Uruçu, Tiúba, Mandaçaia, etc.).
+            Regido pela Portaria SDA/MAPA nº 795/2023 (Art. 46, II) e Portaria nº 1.439/2025.
+            Parâmetros de destinação condicional: Umidade até 23%, Acidez até 80 mEq/kg.
+            Métodos de extração permitidos: Sucção (Art. 2º, XVII) e Escoamento (Art. 2º, XXV).
+        </rdfs:comment>
+        <skos:related rdf:resource="#Portaria_795_2023"/>
+        <skos:related rdf:resource="#Portaria_1439_2025"/>
+        <skos:related rdf:resource="#ScientificReference_Vale_2018"/>
+        <skos:related rdf:resource="#ScientificReference_Sousa_2009"/>
+    </owl:Class>
+
+    <owl:Class rdf:about="#HoneyComb">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Asset"/>
+        <rdfs:label xml:lang="pt">Mel em Favos ou com Favos</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Mel armazenado nos favos operculados. De acordo com a Portaria 795/2023,
+            os favos devem ser limpos, claros, sem larvas, operculados e de primeiro uso.
+            Destinação: Favos escuros ou com larvas → Condenação (Produtos não comestíveis).
+        </rdfs:comment>
+        <skos:related rdf:resource="#Portaria_795_2023"/>
+    </owl:Class>
+
+    <owl:Class rdf:about="#Beeswax">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Asset"/>
+        <rdfs:label xml:lang="pt">Cera de Abelhas</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Cera bruta ou alveolada para reutilização na apicultura ou indústria cosmética.
+            Classificação conforme Art. 52 da Portaria 795/2023:
+            - Cera de abelhas bruta: sem processo de purificação
+            - Cera de abelhas branca ou pré-beneficiada: submetida a purificação
+            Rotulagem deve conter: 'Produto não comestível'.
+            Destinação: Mistura com parafina ou outras substâncias → Condenação.
+        </rdfs:comment>
+        <skos:related rdf:resource="#Portaria_795_2023"/>
+    </owl:Class>
+
+    <owl:Class rdf:about="#Pollen">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Asset"/>
+        <rdfs:label xml:lang="pt">Pólen Apícola</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Pólen desidratado coletado por Apis mellifera. 
+            Conforme Art. 38 da Portaria 795/2023:
+            - Deve ser conservado sob refrigeração
+            - Limpeza e seleção são etapas obrigatórias
+            - Umidade máxima: 4% (acima disso → Re-beneficiamento ou Destinação Industrial)
+        </rdfs:comment>
+        <skos:related rdf:resource="#Portaria_795_2023"/>
+    </owl:Class>
+
+    <owl:Class rdf:about="#Propolis">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Asset"/>
+        <rdfs:label xml:lang="pt">Própolis</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Resina coletada pelas abelhas para vedação e proteção da colmeia.
+            Conforme Art. 39 da Portaria 795/2023, limpeza e seleção são etapas obrigatórias.
+            Destinação: Presença de bolores ou leveduras → Condenação.
+        </rdfs:comment>
+        <skos:related rdf:resource="#Portaria_795_2023"/>
+    </owl:Class>
+
+    <owl:Class rdf:about="#PropolisExtract">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Asset"/>
+        <rdfs:label xml:lang="pt">Extrato de Própolis</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Extrato obtido por maceração da própolis em álcool neutro de grau alimentício.
+            Parâmetros conforme Anexo da Portaria 795/2023:
+            - Teor alcoólico máximo: 70°GL (acima → Re-beneficiamento)
+            - Teor de cera máximo: 1% (m/m) (acima → Re-beneficiamento)
+            - Teor de extrato seco mínimo: 11% (abaixo → Re-beneficiamento)
+        </rdfs:comment>
+        <skos:related rdf:resource="#Portaria_795_2023"/>
+    </owl:Class>
+
+    <owl:Class rdf:about="#RoyalJelly">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Asset"/>
+        <rdfs:label xml:lang="pt">Geleia Real</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Produto secretado pelas abelhas nutrizes para alimentação da rainha.
+            Conforme Portaria 795/2023:
+            - Deve ser transportada sob refrigeração (0°C a 10°C)
+            - Pode ser liofilizada
+            - Destinação: Presença de substâncias estranhas ou fora dos parâmetros → Condenação
+        </rdfs:comment>
+        <skos:related rdf:resource="#Portaria_795_2023"/>
+    </owl:Class>
+
+    <owl:Class rdf:about="#IndustrialHoney">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Asset"/>
+        <rdfs:label xml:lang="pt">Mel para Uso Industrial</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Mel fora das especificações para consumo direto, destinado à elaboração 
+            de outros produtos comestíveis.
+            Conforme Art. 50 da Portaria 795/2023 (alterado pela Portaria 1.439/2025):
+            - HMF acima do padrão (desde que diástase conforme)
+            - Diástase fora do padrão (desde que HMF conforme)
+            - Acidez elevada
+            - Início de fermentação
+            - Alterações sensoriais
+            Rotulagem deve conter: 'PROIBIDA A VENDA FRACIONADA'.
+        </rdfs:comment>
+        <skos:related rdf:resource="#Portaria_795_2023"/>
+        <skos:related rdf:resource="#Portaria_1439_2025"/>
+    </owl:Class>
+
+    <owl:Class rdf:about="#CompoundProductWithoutIngredients">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Asset"/>
+        <rdfs:label xml:lang="pt">Composto de Produtos de Abelhas sem Adição</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Mistura de dois ou mais produtos de abelhas combinados entre si, 
+            correspondendo a 100% do produto elaborado (Art. 53, I da Portaria 795/2023).
+            Denominação: 'Composto de ... e ...' em ordem decrescente de quantidade.
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#CompoundProductWithIngredients">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Asset"/>
+        <rdfs:label xml:lang="pt">Composto de Produtos de Abelhas com Adição</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Mistura de um ou mais produtos de abelhas com adição de ingredientes permitidos
+            (Art. 53, II da Portaria 795/2023).
+            Denominação: 'Composto de ... com ...' (produtos apícolas primeiro).
+        </rdfs:comment>
+    </owl:Class>
+
+    <!-- 2.2 Ativos de Produção (Subclasses de agritrust:Asset) -->
+
+    <owl:Class rdf:about="#Apiary">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Asset"/>
+        <rdfs:label xml:lang="pt">Apiário</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Local destinado à criação de abelhas do gênero Apis, composto por um conjunto 
+            de colônias alojadas em colmeias (Art. 2º, I da Portaria 795/2023).
+            Deve ter cadastro atualizado junto aos órgãos de defesa sanitária.
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#Meliponary">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Asset"/>
+        <rdfs:label xml:lang="pt">Meliponário</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Local destinado à criação de abelhas nativas sem ferrão da tribo Meliponini,
+            composto de um conjunto de colônias alojadas em colmeias (Art. 2º, II).
+            Deve atender legislações específicas de órgãos de proteção ambiental (Art. 67).
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#ApisHive">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Asset"/>
+        <rdfs:label xml:lang="pt">Colmeia de Apis Mellifera</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Colmeia racional (modelo Langstroth ou similar) para produção de mel.
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#StinglessBeeHive">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Asset"/>
+        <rdfs:label xml:lang="pt">Colmeia de Abelha Nativa</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Colmeia racional de espécie nativa sem ferrão (meliponário). 
+            Modelos: INPA, UTOB, Nordestina, etc.
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#QueenBee">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Asset"/>
+        <rdfs:label xml:lang="pt">Rainha</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Rainha selecionada para melhoramento genético. Tokenizável como NFT para 
+            rastreabilidade de linhagem e características produtivas.
+        </rdfs:comment>
+    </owl:Class>
+
+    <!-- 2.3 Classes de Governança, Qualidade e Trânsito -->
+
+    <owl:Class rdf:about="https://w3id.org/agrisemantics/AGRITRUST#QualityStandard">
+        <rdfs:label xml:lang="pt">Padrão de Qualidade</rdfs:label>
+        <rdfs:comment xml:lang="pt">Norma técnica, legislação ou regulamento que define parâmetros de qualidade para um produto.</rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="https://w3id.org/agrisemantics/AGRITRUST#Threshold">
+        <rdfs:label xml:lang="pt">Limiar</rdfs:label>
+        <rdfs:comment xml:lang="pt">Valor máximo ou mínimo permitido para uma propriedade observável segundo um padrão de qualidade.</rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="https://w3id.org/agrisemantics/AGRITRUST#ScientificPublication">
+        <rdfs:label xml:lang="pt">Publicação Científica</rdfs:label>
+        <rdfs:comment xml:lang="pt">Artigo ou estudo científico que serve como evidência para parâmetros técnicos.</rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#TransitLicense">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Certificate"/>
+        <rdfs:label xml:lang="pt">Guia de Trânsito Animal (GTA)</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Documento oficial obrigatório para o transporte de abelhas (Apiário/Meliponário migratório)
+            conforme Instrução Normativa SDA/MAPA e Legislação de Defesa Sanitária Animal.
+            Emitido pelo Sistema de Defesa Agropecuária (SDA).
+            Essencial para comprovar a sanidade do plantel durante a migração e permitir
+            a rastreabilidade de movimentação de colmeias entre pastos apícolas.
+        </rdfs:comment>
+        <skos:related rdf:resource="https://wikisda.agricultura.gov.br/pt-br/Sa%C3%BAde-Animal/GTA-Abelhas"/>
+    </owl:Class>
+
+    <owl:Class rdf:about="#EnvironmentalLicense">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Certificate"/>
+        <rdfs:label xml:lang="pt">Licença ou Autorização Ambiental</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Documento de licenciamento ou autorização obtido junto ao órgão de proteção 
+            e conservação ambiental competente, obrigatório para comprovação da origem 
+            da espécie de abelha sem ferrão (Art. 68 da Portaria 795/2023).
+        </rdfs:comment>
+    </owl:Class>
+
+    <!-- ============================================================================= -->
+    <!-- 2.4 PROCESSOS ESPECÍFICOS (Subclasses diretas de agritrust:Process)            -->
+    <!-- ============================================================================= -->
+
+    <owl:Class rdf:about="#Centrifugation">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Process"/>
+        <rdfs:label xml:lang="pt">Centrifugação</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Aplicação de força centrífuga para retirada do mel dos alvéolos dos favos,
+            utilizando equipamento sanitariamente aceito e tecnologicamente adequado
+            (Art. 2º, V da Portaria 795/2023). Método padrão para Apis mellifera.
+            Requer mesa desoperculadora e centrífuga (Art. 25).
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#Suction">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Process"/>
+        <rdfs:label xml:lang="pt">Extração por Sucção</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Método utilizado para coleta do mel de abelhas sem ferrão, feito diretamente 
+            dos potes por meio de bombas de sucção manual ou elétrica, elaboradas com 
+            material sanitariamente aceito e tecnologicamente adequado (Art. 2º, XVII).
+            Permitido para meliponídeos conforme Art. 25, Parágrafo único.
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#Draining">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Process"/>
+        <rdfs:label xml:lang="pt">Extração por Escoamento</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Método utilizado para coleta de mel de abelhas sem ferrão feita por meio 
+            de cortes nos potes, inversão e escoamento do mel por gravidade, utilizando 
+            material sanitariamente aceito e tecnologicamente adequado.
+            (Art. 2º, XXV da Portaria 1.439/2025).
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#Uncapping">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Process"/>
+        <rdfs:label xml:lang="pt">Desoperculação</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Retirada dos opérculos que recobrem cada alvéolo do favo, permitindo a 
+            extração do mel (Art. 2º, IV da Portaria 795/2023).
+            Etapa obrigatória para extração de mel de Apis mellifera.
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#Decantation">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Process"/>
+        <rdfs:label xml:lang="pt">Decantação</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Etapa obrigatória do beneficiamento para retirada de impurezas leves ou 
+            pesadas e de gases diluídos no mel (Art. 2º, VI).
+            Deve estar descrita no programa de autocontrole do estabelecimento (Art. 34, II).
+            Pode ser realizada no mesmo local da extração, desde que em momento distinto.
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#Filtration">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Process"/>
+        <rdfs:label xml:lang="pt">Filtração</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Etapa obrigatória do beneficiamento para retirada de fragmentos ou pedaços de 
+            ceras, abelhas e demais partículas estranhas à composição do mel.
+            (Art. 2º, VII e Art. 34, III da Portaria 795/2023).
+            O filtro ou peneira deve possuir medidas de 40 a 80 mesh, de material 
+            tecnologicamente e sanitariamente adequado.
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#Homogenization">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Process"/>
+        <rdfs:label xml:lang="pt">Homogeneização</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Etapa facultativa do beneficiamento para uniformizar a composição dos méis,
+            do extrato de própolis ou de outros produtos apícolas, realizada em equipamento 
+            sanitariamente aceito e tecnologicamente adequado (Art. 2º, VIII).
+            Necessária quando o estabelecimento realizar mistura de méis de diferentes 
+            características (Art. 26, §1º).
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#ThermalTreatment">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Process"/>
+        <rdfs:label xml:lang="pt">Tratamento Térmico</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Conforme Art. 2º, XIII e Art. 34, I da Portaria 795/2023 (alterado pela 1.439/2025):
+            a) Pasteurização: redução da carga microbiana por aquecimento controlado
+            b) Fusão rápida: redução de microcristais de glicose em trocador de calor
+            c) Descristalização: transformação do mel cristalizado para estado líquido
+            
+            Deve ter registro auditável do binômio tempo x temperatura e controle de HMF
+            antes e depois do processamento. Vedado o emprego de clarificantes.
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#Dehumidification">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Process"/>
+        <rdfs:label xml:lang="pt">Desumidificação ou Desidratação</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Etapa facultativa do beneficiamento para reduzir o teor de umidade do mel 
+            ou de outro produto apícola recebido dentro dos padrões estabelecidos no 
+            regulamento técnico específico ou, no caso dos produtos das abelhas sem ferrão, 
+            quando recebido nos limites do padrão indicado em seu registro.
+            Realizada por meio de ventilação ou aquecimento controlado (binômio tempo x 
+            temperatura) ou outro processo sanitariamente adequado.
+            (Art. 2º, XIV da Portaria 1.439/2025).
+            Proibido para correção de produtos fora do padrão (Art. 85).
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#Maceration">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Process"/>
+        <rdfs:label xml:lang="pt">Maceração</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Etapa do beneficiamento para extração dos componentes solúveis da própolis 
+            em álcool neutro de grau alimentício, por processo sanitariamente aceito e 
+            tecnologicamente adequado (Art. 2º, XI e Art. 40).
+            Exclusiva para produção de extrato de própolis.
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#WaxMelting">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Process"/>
+        <rdfs:label xml:lang="pt">Fusão de Cera</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Processo de beneficiamento da cera por meio de aquecimento controlado até 
+            a obtenção do produto em estado líquido (Art. 2º, XII).
+            Utilizado para eliminação de impurezas e clareamento.
+            Equipamentos necessários: tanque de fusão, equipamento de filtração, 
+            tanques ou formas de solidificação (Art. 29).
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#Lyophilization">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Process"/>
+        <rdfs:label xml:lang="pt">Liofilização</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Processo de desidratação realizado em baixas temperaturas, que envolve a 
+            remoção de água dos produtos por meio de equipamento sanitariamente aceito 
+            e tecnologicamente adequado (Art. 2º, XVI).
+            Aplicável para geleia real e outros produtos.
+        </rdfs:comment>
+    </owl:Class>
+
+    <!-- Processos de Manejo e Sanidade -->
+
+    <owl:Class rdf:about="#HiveMigration">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Process"/>
+        <rdfs:label xml:lang="pt">Migração de Colmeias</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Transporte de colmeias entre diferentes locais para aproveitamento de 
+            floradas específicas ou serviços de polinização.
+            Conforme Art. 66 da Portaria 795/2023:
+            - Deve informar localizações dos pastos apícolas no cadastro
+            - Deve indicar períodos do ano em que são utilizados
+            - Requer GTA (Guia de Trânsito Animal) para comprovação sanitária
+            Crítico para rastreabilidade de origem floral e certificações.
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#SupplementalFeeding">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Process"/>
+        <rdfs:label xml:lang="pt">Alimentação Artificial</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Fornecimento de xarope de açúcar ou pasta proteica em períodos de 
+            escassez de néctar.
+            ATENÇÃO: Conforme Anexo da Portaria 795/2023, mel obtido exclusivamente 
+            a partir de alimentação artificial é DESTINADO À CONDENAÇÃO (Produtos não 
+            comestíveis). Relevante para certificação orgânica (restrições).
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#HiveSplitting">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Process"/>
+        <rdfs:label xml:lang="pt">Divisão de Enxames</rdfs:label>
+        <rdfs:comment xml:lang="pt">
+            Criação de novas colmeias a partir de uma colmeia matriz. Importante 
+            para rastreabilidade genética e multiplicação de plantel.
+        </rdfs:comment>
+    </owl:Class>
+
+    <owl:Class rdf:about="#PollenHarvesting">
+        <rdfs:subClassOf rdf:resource="https://w3id.org/agrisemantics/AGRITRUST#Process"/>
+        <rdfs:label xml:lang="

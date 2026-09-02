@@ -1,0 +1,690 @@
+@prefix : <https://w3id.org/agrisemantics/AGRITRUST/bee-extension#> .
+@prefix agritrust: <https://w3id.org/agrisemantics/AGRITRUST#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix sosa: <http://www.w3.org/ns/sosa/> .
+@prefix geo: <http://www.opengis.net/ont/geosparql#> .
+@prefix odrl: <http://www.w3.org/ns/odrl/2/> .
+@prefix vc: <https://www.w3.org/2018/credentials/v1> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix qudt: <http://qudt.org/vocab/unit/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+
+#=============================================================================
+# 4. INSTÂNCIAS DE PADRÕES DE QUALIDADE E REFERÊNCIAS
+# =============================================================================
+
+# 4.1 Portaria SDA/MAPA nº 795/2023 (Base Legal Principal)
+
+:Portaria_795_2023
+    a agritrust:QualityStandard, owl:NamedIndividual ;
+    rdfs:label "Portaria SDA/MAPA nº 795/2023"@pt ;
+    rdfs:seeAlso <https://www.in.gov.br/web/dou/-/portaria-sda-n-795-de-10-de-maio-de-2023-483073181> ;
+    dc:source "Brasil. Ministério da Agricultura e Pecuária. Secretaria de Defesa Agropecuária. Portaria SDA nº 795, de 10 de maio de 2023." ;
+    dc:date "2023-05-10"^^xsd:date ;
+    rdfs:comment """
+        Define as normas higiênico-sanitárias e tecnológicas para os estabelecimentos 
+        que elaborem produtos de abelhas e seus derivados.
+        Classifica produtos de abelhas do gênero Apis e da tribo Meliponini.
+        Estabelece requisitos para extração, beneficiamento, rotulagem, transporte e rastreabilidade.
+        """@pt .
+
+# 4.2 Portaria SDA/MAPA nº 1.439/2025 (Atualização)
+
+:Portaria_1439_2025
+    a agritrust:QualityStandard, owl:NamedIndividual ;
+    rdfs:label "Portaria SDA/MAPA nº 1.439/2025"@pt ;
+    rdfs:seeAlso <https://www.gov.br/agricultura/pt-br/assuntos/inspecao/produtos-animal/legislacao/copy2_of_Port7952023normaprodutosabelhas.pdf> ;
+    dc:source "Brasil. Ministério da Agricultura e Pecuária. Secretaria de Defesa Agropecuária. Portaria SDA nº 1.439, de 6 de novembro de 2025." ;
+    dc:date "2025-11-06"^^xsd:date ;
+    rdfs:comment """
+        Altera a Portaria SDA/MAPA nº 795/2023.
+        Principais alterações:
+        - Inclui definição de 'escoamento' como método de coleta para mel de abelhas sem ferrão (Art. 2º, XXV)
+        - Atualiza definição de tratamento térmico (pasteurização, fusão rápida, descristalização)
+        - Inclui 'desumidificação ou desidratação' como etapa facultativa (Art. 2º, XIV)
+        - Atualiza critérios de destinação no Anexo:
+          * Mel nativo: Umidade até 23% → Aproveitamento Condicional
+          * Mel nativo: Acidez até 80 mEq/kg → Destinação Industrial
+          * Mel com HMF acima do padrão → Destinação Industrial (se diástase conforme)
+        """@pt .
+
+# 4.3 Instrução Normativa nº 11/2000 (RTIQ do Mel - Apis mellifera)
+
+:Standard_IN11_Apis
+    a agritrust:QualityStandard, owl:NamedIndividual ;
+    rdfs:label "IN 11/2000 - Regulamento Técnico de Identidade e Qualidade do Mel (Apis mellifera)"@pt ;
+    rdfs:seeAlso <https://www.gov.br/agricultura/pt-br/assuntos/inspecao/produtos-animal/legislacao/IN112000RTmel.pdf> ;
+    dc:source "Brasil. Ministério da Agricultura, Pecuária e Abastecimento. Instrução Normativa nº 11, de 20 de outubro de 2000." ;
+    dc:date "2000-10-20"^^xsd:date ;
+    rdfs:comment """
+        Aprova o Regulamento Técnico de Identidade e Qualidade do Mel.
+        Aplicável exclusivamente ao mel de Apis mellifera.
+        """@pt ;
+    :definesMaximum [
+        a agritrust:Threshold ;
+        agritrust:observedProperty "Umidade"@pt ;
+        agritrust:hasMaximumValue "20.0"^^xsd:decimal ;
+        agritrust:hasUnit qudt:PERCENT ;
+        rdfs:comment "Acima de 20% indica risco de fermentação para mel de Apis mellifera."@pt
+    ] ;
+    :definesMaximum [
+        a agritrust:Threshold ;
+        agritrust:observedProperty "HMF"@pt ;
+        agritrust:hasMaximumValue "60.0"^^xsd:decimal ;
+        agritrust:hasUnit qudt:MilliGM-PER-KiloGM ;
+        rdfs:comment "Hidroximetilfurfural - máximo 60 mg/kg."@pt
+    ] ;
+    :definesMaximum [
+        a agritrust:Threshold ;
+        agritrust:observedProperty "Acidez"@pt ;
+        agritrust:hasMaximumValue "50.0"^^xsd:decimal ;
+        agritrust:hasUnit <http://qudt.org/vocab/unit/MilliEQ-PER-KiloGM> ;
+        rdfs:comment "Acidez livre - máximo 50 meq/kg."@pt
+    ] ;
+    :definesMinimum [
+        a agritrust:Threshold ;
+        agritrust:observedProperty "Atividade Diastásica"@pt ;
+        agritrust:hasMinimumValue "8.0"^^xsd:decimal ;
+        agritrust:hasUnit <http://qudt.org/vocab/unit/GOTHE> ;
+        rdfs:comment "Mínimo 8 na escala Gothe (exceto méis naturalmente pobres em enzimas)."@pt
+    ] ;
+    :definesMinimum [
+        a agritrust:Threshold ;
+        agritrust:observedProperty "Açúcares Redutores"@pt ;
+        agritrust:hasMinimumValue "65.0"^^xsd:decimal ;
+        agritrust:hasUnit qudt:PERCENT ;
+        rdfs:comment "Mínimo 65 g/100g para mel floral."@pt
+    ] ;
+    :definesMaximum [
+        a agritrust:Threshold ;
+        agritrust:observedProperty "Sacarose Aparente"@pt ;
+        agritrust:hasMaximumValue "6.0"^^xsd:decimal ;
+        agritrust:hasUnit qudt:PERCENT ;
+        rdfs:comment "Máximo 6 g/100g (exceto méis específicos)."@pt
+    ] ;
+    :definesMaximum [
+        a agritrust:Threshold ;
+        agritrust:observedProperty "Cinzas"@pt ;
+        agritrust:hasMaximumValue "0.6"^^xsd:decimal ;
+        agritrust:hasUnit qudt:PERCENT ;
+        rdfs:comment "Máximo 0,6 g/100g para mel floral."@pt
+    ] ;
+    :definesMinimum [
+        a agritrust:Threshold ;
+        agritrust:observedProperty "Sólidos Insolúveis em Água"@pt ;
+        agritrust:hasMaximumValue "0.1"^^xsd:decimal ;
+        agritrust:hasUnit qudt:PERCENT ;
+        rdfs:comment "Máximo 0,1 g/100g para mel prensado."@pt
+    ] .
+
+# 4.4 Referência Científica: Vale et al., 2018 (Meliponídeos no Acre)
+
+:ScientificReference_Vale_2018
+    a agritrust:ScientificPublication, owl:NamedIndividual ;
+    rdfs:label "Vale et al., 2018. Honey quality of Melipona sp. in Acre, Brazil."@en ;
+    dc:bibliographicCitation """
+        Vale, M. A. D.; Gomes, F. A.; Santos, B. R. C.; Ferreira, J. B. 
+        Honey quality of Melipona sp. bees in Acre, Brazil. 
+        Acta Agronómica, v. 67, n. 2, p. 201-207, 2018.
+        """ ;
+    dc:identifier <https://doi.org/10.15446/acag.v67n2.60836> ;
+    rdfs:comment """
+        Conclui que a legislação brasileira (IN 11/2000) é inadequada para abelhas 
+        nativas, principalmente quanto aos parâmetros de umidade e acidez. 
+        Recomenda o estabelecimento de padrões específicos para meliponídeos.
+        """@pt ;
+    :keyFindings """
+        - Umidade variou de 23,5% a 31,2% entre espécies de Melipona
+        - Acidez variou de 34,7 a 78,3 meq/kg
+        - 100% das amostras seriam reprovadas pela IN 11/2000 no parâmetro umidade
+        - HMF geralmente baixo (<10 mg/kg) quando fresco
+        - Açúcares redutores: 58,3% a 72,1%
+        """@pt .
+
+# 4.5 Referência Científica: Sousa et al., 2009 (Meliponídeos no Nordeste)
+
+:ScientificReference_Sousa_2009
+    a agritrust:ScientificPublication, owl:NamedIndividual ;
+    rdfs:label "Sousa et al., 2009. Characterization of honey produced by species of Melipona Illiger."@en ;
+    dc:bibliographicCitation """
+        Sousa, B. A.; Marchini, L. C.; Oda-Souza, M.; Carvalho, C. A. L.; Alves, R. M. O. 
+        Characterization of honey produced by species of Melipona Illiger, 1806 
+        (apidae: meliponini) from the northeast area of Brazil: 1. Physico-chemical characteristics. 
+        Química Nova, v. 32, n. 2, p. 303-308, 2009.
+        """ ;
+    dc:identifier <https://doi.org/10.1590/S0100-40422009000200007> ;
+    rdfs:comment """
+        Caracterização físico-química de méis de diferentes espécies de Melipona 
+        no Nordeste do Brasil. Evidencia a variabilidade interespecífica e a 
+        necessidade de padrões diferenciados.
+        """@pt ;
+    :keyFindings """
+        - Umidade: 23,1% a 30,5% (dependendo da espécie)
+        - Acidez: 28,7 a 79,5 meq/kg
+        - HMF: geralmente baixo (< 10 mg/kg) quando fresco
+        - Cinzas: 0,12% a 0,45%
+        - Açúcares redutores: 58,3% a 72,1%
+        """@pt .
+
+# 4.6 Referência Científica: Braga et al., 2020 (Melipona subnitida)
+
+:ScientificReference_Braga_2020
+    a agritrust:ScientificPublication, owl:NamedIndividual ;
+    rdfs:label "Braga et al., 2020. Analytical study of physicochemical characteristics from Melipona subnitida honey."@en ;
+    dc:bibliographicCitation """
+        Braga, D. C.; Liberato, M. C. T. C.; Lima, V. L. F.; Araújo-Neto, J. A. M. 
+        Analytical study of the physicochemical characteristics from Melipona subnitida D. 
+        honey in adequation to Brazilian law. 
+        Food Science and Technology, v. 40, suppl 1, p. 217-221, 2020.
+        """ ;
+    dc:identifier <https://doi.org/10.1590/fst.08919> ;
+    rdfs:comment """
+        Análise da adequação do mel de Jandaíra (Melipona subnitida) à legislação 
+        brasileira. Conclui pela inadequação dos parâmetros atuais.
+        """@pt ;
+    :keyFindings """
+        - Umidade média: 26,3% (acima do limite de 20% da IN 11)
+        - Acidez média: 44,3 meq/kg
+        - 100% de desconformidade no parâmetro umidade
+        - Recomenda regulamentação específica para mel de abelhas nativas
+        """@pt .
+
+
+#=============================================================================
+#  INSTÂNCIAS DE EXEMPLO (Simulação da PoC Apícola com Conformidade Legal)
+#=============================================================================
+
+# Atores do Ecossistema AgriTrust
+
+:CooperativaMelDoCerrado
+    a agritrust:PlatformProvider, agritrust:DataConsumer ;
+    rdfs:label "Cooperativa Mel do Cerrado"@pt ;
+    agritrust:hasDID "did:agritrust:coop:01234567000189" ;
+    rdfs:comment "Provedora de plataforma TaaS para apicultores associados. Registro SIE-DF-001."@pt .
+
+:Apicultor_Joao_Cerrado
+    a agritrust:DataProducer ;
+    rdfs:label "João da Silva"@pt ;
+    rdfs:comment "Apicultor familiar, proprietário do Apiário Cerrado Vivo e Meliponário Jataí."@pt ;
+    agritrust:hasDID "did:agritrust:apicultor:12345678900" ;
+    foaf:name "João da Silva" ;
+    :hasSupplierCadaster "SIE-DF-0123 - Apiário Cerrado Vivo (50 colmeias Apis, 10 colmeias Jataí)" .
+
+:Laboratorio_Apicola_Central
+    a agritrust:Certifier ;
+    rdfs:label "Laboratório Apícola Central"@pt ;
+    agritrust:hasDID "did:agritrust:lab:LAB001" ;
+    rdfs:comment "Laboratório credenciado no MAPA para análises físico-químicas de mel."@pt .
+
+:Importador_Alemao_Mel
+    a agritrust:DataConsumer ;
+    rdfs:label "Honig Import GmbH"@de ;
+    agritrust:hasDID "did:agritrust:importer:DE987654321" ;
+    rdfs:comment "Importador europeu exigindo compliance EUDR e certificação orgânica."@pt .
+
+:Universidade_Brasilia
+    a agritrust:DataConsumer ;
+    rdfs:label "Universidade de Brasília - Lab. de Meliponídeos"@pt ;
+    agritrust:hasDID "did:agritrust:university:UNB001" ;
+    rdfs:comment "Grupo de pesquisa em abelhas nativas do Cerrado."@pt .
+
+:Orgao_Ambiental_DF
+    a agritrust:Certifier ;
+    rdfs:label "Instituto Brasília Ambiental - IBRAM"@pt ;
+    agritrust:hasDID "did:agritrust:environmental:DF001" ;
+    rdfs:comment "Órgão emissor de licenças ambientais para meliponicultura."@pt .
+
+:Defesa_Sanitaria_DF
+    a agritrust:Certifier ;
+    rdfs:label "Defesa Sanitária Animal - DF"@pt ;
+    agritrust:hasDID "did:agritrust:sanitary:DF001" ;
+    rdfs:comment "Órgão emissor de GTA para trânsito de abelhas."@pt .
+
+# Localizações (GeoSPARQL para EUDR e Rastreabilidade)
+
+:Apiario_CerradoVivo_Geo
+    a geo:Feature ;
+    geo:hasGeometry [ 
+        a geo:Point ; 
+        geo:asWKT "POINT(-47.456123 -22.123456)"^^geo:wktLiteral 
+    ] ;
+    rdfs:label "Apiário Cerrado Vivo"@pt ;
+    agritrust:hasMunicipality "Brasília"@pt ;
+    agritrust:hasState "DF"@pt ;
+    agritrust:biome "Cerrado"@pt ;
+    agritrust:conservationStatus "Área de Preservação Permanente"@pt .
+
+:Apiario_CerradoVivo_Geo_Poligono
+    a geo:Feature ;
+    geo:hasGeometry [
+        a geo:Polygon ;
+        geo:asWKT """
+            POLYGON((
+                -47.457 -22.124,
+                -47.455 -22.124,
+                -47.455 -22.122,
+                -47.457 -22.122,
+                -47.457 -22.124
+            ))
+        """^^geo:wktLiteral
+    ] ;
+    rdfs:label "Polígono do Apiário Cerrado Vivo"@pt ;
+    agritrust:areaHectare "2.5"^^xsd:decimal .
+
+:Pasto_Aroeira_MG_Geo
+    a geo:Feature ;
+    geo:hasGeometry [ 
+        a geo:Point ; 
+        geo:asWKT "POINT(-45.123456 -18.789012)"^^geo:wktLiteral 
+    ] ;
+    rdfs:label "Pasto Apícola - Florada de Aroeira (MG)"@pt ;
+    agritrust:hasMunicipality "Montes Claros"@pt ;
+    agritrust:hasState "MG"@pt ;
+    agritrust:biome "Cerrado"@pt .
+
+# Licenças e Certificados
+
+:Licenca_Ambiental_Meliponario_001
+    a :EnvironmentalLicense ;
+    rdfs:label "Licença Ambiental - Meliponário Jataí"@pt ;
+    :environmentalLicenseNumber "IBRAM-LA-2024-0123" ;
+    vc:issuanceDate "2024-01-15"^^xsd:date ;
+    vc:expirationDate "2028-01-15"^^xsd:date ;
+    vc:issuer :Orgao_Ambiental_DF ;
+    rdfs:comment "Autoriza a criação de Tetragonisca angustula (Jataí) para produção de mel."@pt .
+
+:Licenca_GTA_Migracao_001
+    a :TransitLicense ;
+    rdfs:label "GTA - Migração para Florada de Aroeira"@pt ;
+    :gtaNumber "GTA-DF-2026-004567" ;
+    vc:issuanceDate "2026-02-20"^^xsd:date ;
+    vc:expirationDate "2026-05-20"^^xsd:date ;
+    vc:issuer :Defesa_Sanitaria_DF ;
+    rdfs:comment """
+        Autoriza transporte de 50 colmeias de Apis mellifera do Apiário Cerrado Vivo (DF) 
+        para pasto apícola em Montes Claros (MG) para florada de Aroeira (Mar-Mai/2026).
+        Atesta sanidade do plantel.
+        """@pt .
+
+:Certificado_Organico_Apiario
+    a vc:VerifiableCredential, agritrust:Certificate ;
+    rdfs:label "Certificado Orgânico - Apiário Cerrado Vivo"@pt ;
+    vc:issuanceDate "2025-12-10"^^xsd:date ;
+    vc:expirationDate "2026-12-10"^^xsd:date ;
+    vc:issuer <https://certificadoraorganica.org.br/did> ;
+    vc:credentialSubject :Apiario_CerradoVivo_Geo ;
+    agritrust:certificateType "Orgânico Brasil"@pt ;
+    agritrust:certificateNumber "BR-ORG-012345" ;
+    agritrust:hasProof [
+        a vc:Ed25519Signature2020 ;
+        vc:proofValue "z3qPqDZ5NYx2M8fJkL9pRtSwQ4vBn7cD6eFgHjKmNpQrStUvWxYz" 
+    ] .
+
+:Certificado_Analise_Nativa
+    a vc:VerifiableCredential, agritrust:Certificate ;
+    rdfs:label "Certificado de Análise - Mel de Jataí (Lote MN-2026-015)"@pt ;
+    vc:issuanceDate "2026-04-17"^^xsd:date ;
+    vc:issuer :Laboratorio_Apicola_Central ;
+    vc:credentialSubject :Lote_Mel_Jatai_2026_015 ;
+    agritrust:certificateType "Análise Físico-Química"@pt ;
+    agritrust:certificateNumber "LAUDO-2026-0421" ;
+    agritrust:hasProof [
+        a vc:Ed25519Signature2020 ;
+        vc:proofValue "5tUvWxYz3qPqDZ5NYx2M8fJkL9pRtSwQ4vBn7cD6eFgHjKmNpQrS" 
+    ] ;
+    rdfs:comment """
+        Atesta:
+        - Umidade: 25,4% (Dentro do padrão científico para Meliponídeos)
+        - HMF: 8,2 mg/kg (Conforme)
+        - Acidez: 52,3 meq/kg (Dentro do limite de 80 mEq/kg da Portaria 1.439/2025)
+        - Ausência de esporos de Paenibacillus larvae
+        - Classificação: Aproveitamento Condicional (Portaria 1.439/2025)
+        """@pt .
+
+# Ativos Físicos: Colmeias
+
+:Colmeia_Jatai_001
+    a :StinglessBeeHive ;
+    agritrust:ownedBy :Apicultor_Joao_Cerrado ;
+    agritrust:hasOperatingLocation :Apiario_CerradoVivo_Geo ;
+    :hasBeeSpecies "Tetragonisca angustula (Jataí)" ;
+    agritrust:hasIdentifier "JAT-001" ;
+    agritrust:installationDate "2024-08-15"^^xsd:date ;
+    rdfs:label "Colmeia Jataí #001"@pt .
+
+:Colmeia_Jatai_002
+    a :StinglessBeeHive ;
+    agritrust:ownedBy :Apicultor_Joao_Cerrado ;
+    agritrust:hasOperatingLocation :Apiario_CerradoVivo_Geo ;
+    :hasBeeSpecies "Tetragonisca angustula (Jataí)" ;
+    agritrust:hasIdentifier "JAT-002" ;
+    agritrust:installationDate "2024-08-15"^^xsd:date ;
+    rdfs:label "Colmeia Jataí #002"@pt .
+
+:Colmeia_Apis_005
+    a :ApisHive ;
+    agritrust:ownedBy :Apicultor_Joao_Cerrado ;
+    agritrust:hasOperatingLocation :Apiario_CerradoVivo_Geo ;
+    agritrust:hasIdentifier "API-005" ;
+    rdfs:label "Colmeia Apis #005"@pt .
+
+:Colmeia_Apis_006
+    a :ApisHive ;
+    agritrust:ownedBy :Apicultor_Joao_Cerrado ;
+    agritrust:hasOperatingLocation :Apiario_CerradoVivo_Geo ;
+    agritrust:hasIdentifier "API-006" ;
+    rdfs:label "Colmeia Apis #006"@pt .
+
+# Ativos Físicos: Lotes de Produtos
+
+:Lote_Mel_Silvestre_2026_042
+    a :HoneyApis ;
+    agritrust:ownedBy :Apicultor_Joao_Cerrado ;
+    :hasFloralOrigin "Aroeira (Myracrodruon urundeuva)"@pt ;
+    :hasMoistureContent "18.5"^^xsd:decimal ;
+    :hasHMFContent "12.3"^^xsd:decimal ;
+    :hasAcidity "32.1"^^xsd:decimal ;
+    :hasDiastaseActivity "10.5"^^xsd:decimal ;
+    agritrust:productionDate "2026-04-15"^^xsd:date ;
+    agritrust:batchNumber "MS-2026-042" ;
+    agritrust:hasCertificate :Certificado_Organico_Apiario ;
+    agritrust:qualityStatus "Em Conformidade com IN 11/2000 e Portaria 795/2023"@pt ;
+    agritrust:legalStatus "Aprovado para Comercialização"@pt ;
+    :destinationCategory "Consumo Direto"@pt ;
+    rdfs:label "Lote de Mel Silvestre - Aroeira - Safra 2026/04"@pt .
+
+:Lote_Mel_Jatai_2026_015
+    a :HoneyNativeStinglessBee ;
+    agritrust:ownedBy :Apicultor_Joao_Cerrado ;
+    :hasMoistureContent "25.4"^^xsd:decimal ;
+    :hasHMFContent "8.2"^^xsd:decimal ;
+    :hasAcidity "52.3"^^xsd:decimal ;
+    agritrust:productionDate "2026-04-16"^^xsd:date ;
+    agritrust:batchNumber "MN-2026-015" ;
+    agritrust:hasCertificate :Certificado_Analise_Nativa ;
+    agritrust:qualityStatus "Em Conformidade com Padrão Científico para Meliponídeos e Portaria 1.439/2025"@pt ;
+    agritrust:legalStatus "Aprovado para Comercialização (Portaria 795/2023)"@pt ;
+    :destinationCategory "Aproveitamento Condicional"@pt ;
+    rdfs:seeAlso :ScientificReference_Vale_2018, :ScientificReference_Sousa_2009, :Portaria_1439_2025 ;
+    rdfs:label "Lote de Mel de Jataí - Safra 2026/04"@pt .
+
+# Processos (com Evidência Hands-Free e Conformidade Legal)
+
+:Processo_Colheita_Silvestre_15042026
+    a :Centrifugation ;
+    rdfs:label "Extração de Mel Silvestre por Centrifugação - 15/04/2026"@pt ;
+    prov:startedAtTime "2026-04-15T09:00:00Z"^^xsd:dateTime ;
+    prov:endedAtTime "2026-04-15T14:30:00Z"^^xsd:dateTime ;
+    agritrust:hasInput :Colmeia_Apis_005, :Colmeia_Apis_006 ;
+    agritrust:hasOutput :Lote_Mel_Silvestre_2026_042 ;
+    agritrust:executedBy :Apicultor_Joao_Cerrado ;
+    :hasHarvestMethod "Centrifugação em centrífuga radial"@pt ;
+    :requiresPPE "true"^^xsd:boolean ;
+    :voiceAssistantUsed "Gemini" ;
+    :hasVoiceCommandSource <https://data.agritrust.org/voice/gemini_15042026_001.wav> ;
+    :handsFreeConfidence "0.94"^^xsd:decimal ;
+    agritrust:hasObservation :Observacao_Quantidade_Silvestre, :Observacao_Florada_Silvestre .
+
+:Processo_Filtracao_Silvestre_15042026
+    a :Filtration ;
+    rdfs:label "Filtração do Mel Silvestre - 15/04/2026"@pt ;
+    prov:startedAtTime "2026-04-15T15:00:00Z"^^xsd:dateTime ;
+    agritrust:hasInput :Lote_Mel_Silvestre_2026_042 ;
+    agritrust:executedBy :CooperativaMelDoCerrado ;
+    :hasMeshSize "60"^^xsd:integer ;
+    rdfs:comment "Filtração com peneira de 60 mesh, conforme Art. 34, III da Portaria 795/2023."@pt .
+
+:Processo_Colheita_Jatai_16042026
+    a :Suction ;
+    rdfs:label "Extração de Mel de Jataí por Sucção - 16/04/2026"@pt ;
+    prov:startedAtTime "2026-04-16T08:00:00Z"^^xsd:dateTime ;
+    prov:endedAtTime "2026-04-16T11:15:00Z"^^xsd:dateTime ;
+    agritrust:hasInput :Colmeia_Jatai_001, :Colmeia_Jatai_002 ;
+    agritrust:hasOutput :Lote_Mel_Jatai_2026_015 ;
+    agritrust:executedBy :Apicultor_Joao_Cerrado ;
+    :hasHarvestMethod "Sucção com bomba de vácuo manual (Art. 2º, XVII da Portaria 795/2023)"@pt ;
+    :requiresPPE "false"^^xsd:boolean ;
+    :voiceAssistantUsed "Google Assistant" ;
+    :hasVoiceCommandSource <https://data.agritrust.org/voice/assistant_16042026_002.wav> ;
+    :handsFreeConfidence "0.91"^^xsd:decimal ;
+    agritrust:hasObservation :Observacao_Quantidade_Jatai, :Observacao_Qualidade_Jatai .
+
+:Processo_Migracao_Aroeira_01032026
+    a :HiveMigration ;
+    rdfs:label "Migração para Florada de Aroeira - 01/03/2026"@pt ;
+    prov:startedAtTime "2026-03-01T06:00:00Z"^^xsd:dateTime ;
+    agritrust:hasInput :Colmeia_Apis_005, :Colmeia_Apis_006 ;
+    agritrust:executedBy :Apicultor_Joao_Cerrado ;
+    :hasGTA :Licenca_GTA_Migracao_001 ;
+    :hasPastureLocation :Pasto_Aroeira_MG_Geo ;
+    :pasturePeriod "Março a Maio - Florada de Aroeira"@pt ;
+    :requiresPPE "true"^^xsd:boolean ;
+    :voiceAssistantUsed "Gemini" ;
+    :hasVoiceCommandSource <https://data.agritrust.org/voice/gemini_01032026_003.wav> ;
+    :handsFreeConfidence "0.88"^^xsd:decimal ;
+    rdfs:comment """
+        Migração de 50 colmeias para pasto apícola em Montes Claros (MG) 
+        para aproveitamento da florada de Aroeira. GTA emitida e aprovada.
+        """@pt .
+
+:Processo_Inspecao_Sanitaria_10042026
+    a :HealthInspection ;
+    rdfs:label "Inspeção Sanitária - 10/04/2026"@pt ;
+    prov:startedAtTime "2026-04-10T08:30:00Z"^^xsd:dateTime ;
+    agritrust:hasInput :Colmeia_Apis_005, :Colmeia_Apis_006, :Colmeia_Jatai_001 ;
+    agritrust:executedBy :Apicultor_Joao_Cerrado ;
+    :requiresPPE "true"^^xsd:boolean ;
+    :voiceAssistantUsed "Siri" ;
+    :hasVoiceCommandSource <https://data.agritrust.org/voice/siri_10042026_004.m4a> ;
+    :handsFreeConfidence "0.92"^^xsd:decimal ;
+    agritrust:hasObservation :Observacao_Saude_Colmeias .
+
+# Observações de Campo (com Evidência de Captura Hands-Free)
+
+:Observacao_Quantidade_Silvestre
+    a sosa:Observation ;
+    sosa:observedProperty "Volume de Mel Colhido"@pt ;
+    sosa:hasSimpleResult "15.0"^^xsd:decimal ;
+    sosa:hasUnit qudt:L ;
+    :hasAudioSource <https://data.agritrust.org/audio/whatsapp_15042026_001.ogg> ;
+    :hasImageSource <https://data.agritrust.org/images/whatsapp_15042026_001.jpg> ;
+    :imageCaptureMethod "Timer 10s"@pt ;
+    :transcriptionText "Apiário Cerrado Vivo. Colhi quinze litros de mel silvestre da aroeira hoje de manhã. Tava bem maduro."@pt ;
+    :confidenceScore "0.94"^^xsd:decimal ;
+    sosa:resultTime "2026-04-15T14:45:00Z"^^xsd:dateTime .
+
+:Observacao_Florada_Silvestre
+    a sosa:Observation ;
+    sosa:observedProperty "Origem Floral"@pt ;
+    sosa:hasSimpleResult "Aroeira"@pt ;
+    :hasAudioSource <https://data.agritrust.org/audio/whatsapp_15042026_001.ogg> ;
+    :transcriptionText "mel silvestre da aroeira"@pt ;
+    :confidenceScore "0.89"^^xsd:decimal .
+
+:Observacao_Quantidade_Jatai
+    a sosa:Observation ;
+    sosa:observedProperty "Volume de Mel Nativo Colhido"@pt ;
+    sosa:hasSimpleResult "1.8"^^xsd:decimal ;
+    sosa:hasUnit qudt:L ;
+    :hasAudioSource <https://data.agritrust.org/audio/whatsapp_16042026_002.ogg> ;
+    :hasImageSource <https://data.agritrust.org/images/whatsapp_16042026_002.jpg> ;
+    :imageCaptureMethod "Botão Volume"@pt ;
+    :transcriptionText "Bom dia. Hoje colhi o mel das jataí. Deu um litro e oitocentos das duas caixinhas. Tá bem cheiroso."@pt ;
+    :confidenceScore "0.91"^^xsd:decimal ;
+    sosa:resultTime "2026-04-16T11:20:00Z"^^xsd:dateTime .
+
+:Observacao_Qualidade_Jatai
+    a sosa:Observation ;
+    sosa:observedProperty "Características Organolépticas"@pt ;
+    sosa:hasSimpleResult "Mel bastante líquido, aroma intenso característico de Jataí, coloração âmbar clara."@pt ;
+    :hasAudioSource <https://data.agritrust.org/audio/whatsapp_16042026_002.ogg> ;
+    :transcriptionText "Tá bem cheiroso, bem líquido também, do jeito que o povo gosta."@pt ;
+    :confidenceScore "0.87"^^xsd:decimal .
+
+:Observacao_Saude_Colmeias
+    a sosa:Observation ;
+    sosa:observedProperty "Status Sanitário"@pt ;
+    sosa:hasSimpleResult "Todas as colmeias com boa postura, sem sinais de doenças. Presença de pólen nas entradas."@pt ;
+    :hasAudioSource <https://data.agritrust.org/audio/whatsapp_10042026_004.ogg> ;
+    :transcriptionText "Revisão das colmeias hoje. Tudo tranquilo, bastante cria, sem doença. As apis tão trazendo muito pólen."@pt ;
+    :confidenceScore "0.90"^^xsd:decimal .
+
+:Observacao_Geolocalizacao_Apiario
+    a sosa:Observation ;
+    sosa:observedProperty "Geolocalização e Conformidade Ambiental"@pt ;
+    sosa:hasResult :Apiario_CerradoVivo_Geo_Poligono ;
+    agritrust:hasTimestamp "2026-01-01T00:00:00Z"^^xsd:dateTime ;
+    agritrust:verifiedBy :CooperativaMelDoCerrado ;
+    rdfs:comment """
+        Registro imutável de que o apiário está localizado em área de Cerrado nativo, 
+        sem histórico de desmatamento (comprovado por série temporal de imagens de satélite). 
+        Essencial para compliance com EUDR e certificação orgânica.
+        """@pt .
+
+# =============================================================================
+#           CONTRATOS DE DADOS (ODRL) - Governança Automatizada
+# =============================================================================
+
+:DataContract_Exportacao_Silvestre_EU
+    a agritrust:DataContract ;
+    agritrust:contractId "CONTRACT-HONEY-EU-2026-042" ;
+    rdfs:label "Contrato de Dados - Exportação Mel Silvestre para UE"@pt ;
+    agritrust:validFrom "2026-04-15T00:00:00Z"^^xsd:dateTime ;
+    agritrust:validUntil "2027-04-15T00:00:00Z"^^xsd:dateTime ;
+    agritrust:purpose "Compliance EUDR e Certificação Orgânica para Importação Europeia"@pt ;
+    agritrust:hasPolicyAssignee :Importador_Alemao_Mel ;
+    agritrust:coversAsset :Lote_Mel_Silvestre_2026_042 ;
+    agritrust:coversObservation :Observacao_Geolocalizacao_Apiario, :Observacao_Quantidade_Silvestre ;
+    agritrust:hasODRLPolicy :Politica_Acesso_EUDR_Silvestre .
+
+:Politica_Acesso_EUDR_Silvestre
+    a odrl:Set ;
+    odrl:permission [
+        a odrl:Permission ;
+        odrl:action odrl:read ;
+        odrl:target :Lote_Mel_Silvestre_2026_042, :Observacao_Geolocalizacao_Apiario, :Observacao_Quantidade_Silvestre ;
+        odrl:assignee :Importador_Alemao_Mel ;
+        odrl:constraint [
+            a odrl:Constraint ;
+            odrl:leftOperand odrl:purpose ;
+            odrl:operator odrl:eq ;
+            odrl:rightOperand "Compliance EUDR"@en
+        ]
+    ] ;
+    odrl:prohibition [
+        a odrl:Prohibition ;
+        odrl:action odrl:distribute ;
+        odrl:target :Lote_Mel_Silvestre_2026_042 ;
+        odrl:assignee :Importador_Alemao_Mel
+    ] ;
+    odrl:prohibition [
+        a odrl:Prohibition ;
+        odrl:action odrl:commercialize ;
+        odrl:target :Observacao_Geolocalizacao_Apiario ;
+        odrl:assignee :Importador_Alemao_Mel ;
+        rdfs:comment "Dados de geolocalização não podem ser revendidos."@pt
+    ] .
+
+:DataContract_Pesquisa_Meliponideos
+    a agritrust:DataContract ;
+    agritrust:contractId "CONTRACT-RESEARCH-MN-2026-015" ;
+    rdfs:label "Contrato de Dados - Pesquisa Científica Meliponídeos"@pt ;
+    agritrust:validFrom "2026-04-20T00:00:00Z"^^xsd:dateTime ;
+    agritrust:validUntil "2028-04-20T00:00:00Z"^^xsd:dateTime ;
+    agritrust:purpose "Estudo Científico de Caracterização de Méis Nativos do Cerrado"@pt ;
+    agritrust:hasPolicyAssignee :Universidade_Brasilia ;
+    agritrust:coversAsset :Lote_Mel_Jatai_2026_015 ;
+    agritrust:coversObservation :Observacao_Quantidade_Jatai, :Observacao_Qualidade_Jatai ;
+    agritrust:hasODRLPolicy :Politica_Acesso_Pesquisa_Nativo .
+
+:Politica_Acesso_Pesquisa_Nativo
+    a odrl:Set ;
+    odrl:permission [
+        a odrl:Permission ;
+        odrl:action odrl:read ;
+        odrl:target :Lote_Mel_Jatai_2026_015 ;
+        odrl:assignee :Universidade_Brasilia ;
+        odrl:constraint [
+            a odrl:Constraint ;
+            odrl:leftOperand odrl:purpose ;
+            odrl:operator odrl:eq ;
+            odrl:rightOperand "Pesquisa Científica"@pt
+        ]
+    ] ;
+    odrl:permission [
+        a odrl:Permission ;
+        odrl:action odrl:aggregate ;
+        odrl:target :Lote_Mel_Jatai_2026_015 ;
+        odrl:assignee :Universidade_Brasilia ;
+        rdfs:comment "Permitido agregar dados anonimizados para publicação científica."@pt
+    ] ;
+    odrl:prohibition [
+        a odrl:Prohibition ;
+        odrl:action odrl:attribute ;
+        odrl:target :Lote_Mel_Jatai_2026_015 ;
+        odrl:assignee :Universidade_Brasilia ;
+        rdfs:comment "Dados não podem ser atribuídos nominalmente ao apicultor sem consentimento adicional."@pt
+    ] .
+
+# =============================================================================
+#           TOKENIZAÇÃO (TaaS) - Blockchain Agnóstica
+# =============================================================================
+
+:Blockchain_Besu_AgriTrust
+    a agritrust:BlockchainProvider ;
+    rdfs:label "Rede Besu AgriTrust (IBFT 2.0)"@pt ;
+    agritrust:chainId "1604" ;
+    agritrust:rpcEndpoint <https://besu.agritrust.org/rpc> ;
+    agritrust:explorerEndpoint <https://blockscout.agritrust.org> .
+
+:Blockchain_Polygon_Amoy
+    a agritrust:BlockchainProvider ;
+    rdfs:label "Polygon Amoy Testnet"@pt ;
+    agritrust:chainId "80002" ;
+    agritrust:rpcEndpoint <https://rpc-amoy.polygon.technology> .
+
+:Token_Lote_Silvestre_042
+    a agritrust:Token ;
+    agritrust:represents :Lote_Mel_Silvestre_2026_042 ;
+    agritrust:registeredOnBlockchain :Blockchain_Besu_AgriTrust ;
+    agritrust:managedByPlatform :CooperativaMelDoCerrado ;
+    agritrust:tokenId "0x7a3f9c4e8b1a2d3f5e6c7a8b9c0d1e2f3a4b5c6d" ;
+    agritrust:creationDate "2026-04-15T15:00:00Z"^^xsd:dateTime ;
+    agritrust:hasCrossChainReference [
+        a agritrust:CrossChainReference ;
+        agritrust:registeredOnBlockchain :Blockchain_Polygon_Amoy ;
+        agritrust:referenceId "0x9b4e6d8c2a1f3e5d7c9b1a2d3f4e5c6b7a8d9e0f"
+    ] .
+
+:Token_Lote_Jatai_015
+    a agritrust:Token ;
+    agritrust:represents :Lote_Mel_Jatai_2026_015 ;
+    agritrust:registeredOnBlockchain :Blockchain_Besu_AgriTrust ;
+    agritrust:managedByPlatform :CooperativaMelDoCerrado ;
+    agritrust:tokenId "0x2d8b1a4c6e8f0a2b4c6d8e0f2a4b6c8d0e2f4a6b" ;
+    agritrust:creationDate "2026-04-16T12:00:00Z"^^xsd:dateTime .
+
+:Token_Colmeia_Jatai_001
+    a agritrust:Token ;
+    agritrust:represents :Colmeia_Jatai_001 ;
+    agritrust:registeredOnBlockchain :Blockchain_Besu_AgriTrust ;
+    agritrust:managedByPlatform :CooperativaMelDoCerrado ;
+    agritrust:tokenId "0x1a3b5c7d9e2f4a6b8c0d2e4f6a8b0c2d4e6f8a0b" ;
+    agritrust:creationDate "2024-08-15T10:00:00Z"^^xsd:dateTime .
+
+:Token_GTA_Migracao_001
+    a agritrust:Token ;
+    agritrust:represents :Licenca_GTA_Migracao_001 ;
+    agritrust:registeredOnBlockchain :Blockchain_Besu_AgriTrust ;
+    agritrust:managedByPlatform :CooperativaMelDoCerrado ;
+    agritrust:tokenId "0x4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b6c8d0e2f" ;
+    agritrust:creationDate "2026-02-20T09:00:00Z"^^xsd:dateTime .
+

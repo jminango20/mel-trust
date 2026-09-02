@@ -1,0 +1,143 @@
+@prefix : <https://w3id.org/agrisemantics/AGRITRUST/bee-extension#> .
+@prefix agritrust: <https://w3id.org/agrisemantics/AGRITRUST#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix sosa: <http://www.w3.org/ns/sosa/> .
+@prefix geo: <http://www.opengis.net/ont/geosparql#> .
+@prefix odrl: <http://www.w3.org/ns/odrl/2/> .
+@prefix vc: <https://www.w3.org/2018/credentials/v1> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix qudt: <http://qudt.org/vocab/unit/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+# =============================================================================
+#  REGRAS SHACL PARA VALIDAÇÃO DE DADOS (Controle de Qualidade)
+#=============================================================================
+
+# [SHACL] Validação de Umidade para Mel de Apis (IN 11/2000)
+:HoneyApisMoistureShape a sh:NodeShape ;
+    sh:targetClass :HoneyApis ;
+    sh:property [
+        sh:path :hasMoistureContent ;
+        sh:maxInclusive "20.0"^^xsd:decimal ;
+        sh:severity sh:Violation ;
+        sh:message "Umidade acima de 20% para mel de Apis mellifera (IN 11/2000)"@pt
+    ] .
+
+# [SHACL] Validação de HMF para Mel de Apis
+:HMFValidationShape a sh:NodeShape ;
+    sh:targetClass :HoneyApis ;
+    sh:property [
+        sh:path :hasHMFContent ;
+        sh:maxInclusive "60.0"^^xsd:decimal ;
+        sh:severity sh:Violation ;
+        sh:message "HMF acima de 60 mg/kg - possível superaquecimento (IN 11/2000)"@pt
+    ] .
+
+# [SHACL] Validação de Acidez para Mel de Apis
+:AcidityValidationShape a sh:NodeShape ;
+    sh:targetClass :HoneyApis ;
+    sh:property [
+        sh:path :hasAcidity ;
+        sh:maxInclusive "50.0"^^xsd:decimal ;
+        sh:severity sh:Violation ;
+        sh:message "Acidez acima de 50 meq/kg (IN 11/2000)"@pt
+    ] .
+
+# [SHACL] Validação de Diástase para Mel de Apis
+:DiastaseValidationShape a sh:NodeShape ;
+    sh:targetClass :HoneyApis ;
+    sh:property [
+        sh:path :hasDiastaseActivity ;
+        sh:minInclusive "8.0"^^xsd:decimal ;
+        sh:severity sh:Violation ;
+        sh:message "Atividade diastásica abaixo de 8 Gothe (IN 11/2000)"@pt
+    ] .
+
+# [SHACL] Aviso para Umidade em Mel Nativo (Portaria 1.439/2025)
+:HoneyNativeMoistureShape a sh:NodeShape ;
+    sh:targetClass :HoneyNativeStinglessBee ;
+    sh:property [
+        sh:path :hasMoistureContent ;
+        sh:maxInclusive "23.0"^^xsd:decimal ;
+        sh:severity sh:Info ;
+        sh:message "Umidade dentro do limite para aproveitamento condicional (Portaria 1.439/2025)"@pt
+    ] ;
+    sh:property [
+        sh:path :hasMoistureContent ;
+        sh:minInclusive "23.0"^^xsd:decimal ;
+        sh:maxInclusive "35.0"^^xsd:decimal ;
+        sh:severity sh:Warning ;
+        sh:message "Umidade elevada - verificar necessidade de desumidificação (Art. 2º, XIV da Portaria 1.439/2025)"@pt
+    ] .
+
+# [SHACL] Aviso para Acidez em Mel Nativo (Portaria 1.439/2025)
+:HoneyNativeAcidityShape a sh:NodeShape ;
+    sh:targetClass :HoneyNativeStinglessBee ;
+    sh:property [
+        sh:path :hasAcidity ;
+        sh:maxInclusive "80.0"^^xsd:decimal ;
+        sh:severity sh:Info ;
+        sh:message "Acidez dentro do limite para destinação industrial (Portaria 1.439/2025)"@pt
+    ] .
+
+# [SHACL] Validação de Tamanho de Malha para Filtração (Art. 34, III da Portaria 795/2023)
+:FiltrationMeshShape a sh:NodeShape ;
+    sh:targetClass :Filtration ;
+    sh:property [
+        sh:path :hasMeshSize ;
+        sh:minInclusive "40"^^xsd:integer ;
+        sh:maxInclusive "80"^^xsd:integer ;
+        sh:severity sh:Violation ;
+        sh:message "Tamanho da malha deve estar entre 40 e 80 mesh (Art. 34, III da Portaria 795/2023)"@pt
+    ] .
+
+# [SHACL] Validação de GTA para Migração (Legislação de Defesa Sanitária)
+:HiveMigrationGTAShape a sh:NodeShape ;
+    sh:targetClass :HiveMigration ;
+    sh:property [
+        sh:path :hasGTA ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Migração de colmeias requer GTA (Guia de Trânsito Animal) válida"@pt
+    ] .
+
+# [SHACL] Validação de Licença Ambiental para Meliponário (Art. 68 da Portaria 795/2023)
+:MeliponaryLicenseShape a sh:NodeShape ;
+    sh:targetClass :Meliponary ;
+    sh:property [
+        sh:path :hasEnvironmentalLicense ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Meliponário requer licença ou autorização ambiental (Art. 68 da Portaria 795/2023)"@pt
+    ] .
+
+# [SHACL] Validação de Contrato de Dados
+:DataContractShape a sh:NodeShape ;
+    sh:targetClass agritrust:DataContract ;
+    sh:property [
+        sh:path agritrust:validFrom ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Contrato de dados deve ter data de início"@pt
+    ] ;
+    sh:property [
+        sh:path agritrust:validUntil ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Contrato de dados deve ter data de término"@pt
+    ] ;
+    sh:property [
+        sh:path agritrust:hasPolicyAssignee ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Contrato de dados deve ter pelo menos um assignee"@pt
+    ] .
