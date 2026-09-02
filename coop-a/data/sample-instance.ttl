@@ -1,0 +1,47 @@
+# Instância de dados de domínio do coop-a: um lote de mel de Apis mellifera
+# pronto para ingestão no Fuseki, após validação SHACL.
+#
+# Adaptado de ontology/instances.ttl (raiz do repo), mantendo os mesmos
+# termos de bee-extension.ttl/agritrust:. Duas mudanças em relação à
+# instância original de referência:
+#   1. DIDs trocados pelos placeholders reais deste MVP: did:web:coop-a.example
+#      para a cooperativa (mesmo DID_WEB usado em coop-a/config.py) e um
+#      did:key de exemplo (formato Ed25519 multibase, não é uma chave real —
+#      geração de chave de verdade é escopo do M5) para o produtor individual.
+#   2. Sem a parte de assinatura/VC (vc:VerifiableCredential, hasProof,
+#      Ed25519Signature2020 etc.) — isso é dado de domínio (o lote em si),
+#      não a credencial verificável que será emitida sobre ele em milestone
+#      futuro (M3/M4). O pipeline valida e grava só o dado de domínio aqui.
+@prefix : <https://w3id.org/agrisemantics/AGRITRUST/bee-extension#> .
+@prefix agritrust: <https://w3id.org/agrisemantics/AGRITRUST#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+
+:CooperativaMelDoCerrado
+    a agritrust:PlatformProvider, agritrust:DataConsumer ;
+    rdfs:label "Cooperativa Mel do Cerrado"@pt ;
+    agritrust:hasDID "did:web:coop-a.example" ;
+    rdfs:comment "Provedora de plataforma TaaS para apicultores associados. Registro SIE-DF-001."@pt .
+
+:Apicultor_Joao_Cerrado
+    a agritrust:DataProducer ;
+    rdfs:label "João da Silva"@pt ;
+    foaf:name "João da Silva" ;
+    agritrust:hasDID "did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSwuBV8xRoAnwWsdvktH" ;
+    :hasSupplierCadaster "SIE-DF-0123 - Apiário Cerrado Vivo (50 colmeias Apis, 10 colmeias Jataí)" .
+
+:Lote_Mel_Silvestre_2026_042
+    a :HoneyApis ;
+    agritrust:ownedBy :Apicultor_Joao_Cerrado ;
+    :hasFloralOrigin "Aroeira (Myracrodruon urundeuva)"@pt ;
+    :hasMoistureContent "18.5"^^xsd:decimal ;
+    :hasHMFContent "12.3"^^xsd:decimal ;
+    :hasAcidity "32.1"^^xsd:decimal ;
+    :hasDiastaseActivity "10.5"^^xsd:decimal ;
+    agritrust:productionDate "2026-04-15"^^xsd:date ;
+    agritrust:batchNumber "MS-2026-042" ;
+    agritrust:qualityStatus "Em Conformidade com IN 11/2000 e Portaria 795/2023"@pt ;
+    agritrust:legalStatus "Aprovado para Comercialização"@pt ;
+    :destinationCategory "Consumo Direto"@pt ;
+    rdfs:label "Lote de Mel Silvestre - Aroeira - Safra 2026/04"@pt .

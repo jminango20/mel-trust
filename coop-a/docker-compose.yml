@@ -1,0 +1,29 @@
+# Sobe o Apache Jena Fuseki (triple store) do nó coop-a.
+#
+# Imagem: stain/jena-fuseki. É a imagem Docker "de fato oficial" do
+# ecossistema Jena — mantida pelo próprio time do Apache Jena (Stian Soiland-
+# Reyes é committer do projeto) e referenciada na documentação do Jena como
+# forma padrão de rodar o Fuseki em container. Ao subir, o entrypoint dela:
+#   1. gera/lê ADMIN_PASSWORD para o usuário "admin" (usado no SPARQL Update
+#      protegido e na REST admin API);
+#   2. lê toda env var FUSEKI_DATASET_<n> e, para cada uma, cria via REST
+#      admin API (`/$/datasets`) um dataset TDB persistente com aquele nome
+#      — por isso FUSEKI_DATASET_1=coop-a cria o dataset "coop-a" sozinho,
+#      sem precisar de config.ttl manual.
+#
+# Dataset TDB fica em /fuseki/databases/<nome> dentro do container; o volume
+# nomeado "fuseki-data" mapeia esse diretório para persistir entre restarts.
+services:
+  fuseki:
+    image: stain/jena-fuseki:latest
+    container_name: coop-a-fuseki
+    ports:
+      - "3030:3030"
+    environment:
+      ADMIN_PASSWORD: ${FUSEKI_ADMIN_PASSWORD}
+      FUSEKI_DATASET_1: coop-a
+    volumes:
+      - fuseki-data:/fuseki
+
+volumes:
+  fuseki-data:
