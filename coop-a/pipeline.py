@@ -34,6 +34,7 @@ e este pipeline só faz UPDATE (não faz SELECT/CONSTRUCT com resultados
 tabulares, que é onde SPARQLWrapper compensa mais). Por isso a dependência
 nova é `requests`, não `SPARQLWrapper`.
 """
+import inspect
 import os
 import sys
 
@@ -42,6 +43,10 @@ from dotenv import load_dotenv
 from pyshacl import validate
 from rdflib import Graph
 from rdflib.namespace import SH
+
+# nem toda versão de pyshacl tem allow_infos (foi adicionado depois de
+# allow_warnings) — checa a assinatura instalada antes de passar o kwarg.
+_SUPPORTS_ALLOW_INFOS = "allow_infos" in inspect.signature(validate).parameters
 
 load_dotenv()
 
@@ -63,6 +68,15 @@ def run_shacl(data_graph: Graph):
     shapes_graph = Graph()
     shapes_graph.parse(SHAPES_PATH, format="turtle")
 
+    # allow_warnings/allow_infos: por padrão pyshacl derruba conforms em
+    # QUALQUER sh:Warning ou sh:Info, não só sh:Violation (diferente do
+    # SHACL puro, onde sh:conforms só reage a sh:Violation). Aqui só
+    # sh:Violation deve bloquear a inserção; Warning/Info continuam
+    # aparecendo no relatório, sem travar o gate.
+    validate_kwargs = {"allow_warnings": True}
+    if _SUPPORTS_ALLOW_INFOS:
+        validate_kwargs["allow_infos"] = True
+
     conforms, results_graph, results_text = validate(
         data_graph,
         shacl_graph=shapes_graph,
@@ -70,6 +84,7 @@ def run_shacl(data_graph: Graph):
         # instância (ex: :HoneyApis), sem precisar de reasoning OWL sobre
         # bee-extension.ttl para inferir subclasses/superclasses.
         inference="none",
+        **validate_kwargs,
     )
     return conforms, results_graph, results_text
 
