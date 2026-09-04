@@ -22,3 +22,24 @@ BASE_URL = os.environ.get("BASE_URL", "http://localhost:8001")
 # publicado em /.well-known/did.json, chaves, etc.) é escopo do M5.
 # Por ora só serve para preencher o campo "issuer" do metadata OID4VCI.
 DID_WEB = os.environ.get("DID_WEB", "did:web:coop-a.example")
+
+# --- M2: token endpoint (pre-authorized_code flow) ---
+
+# Código pre-authorized_code HARDCODED/fixo para o MVP. Na spec real este
+# código seria gerado dinamicamente por requisição (um por "credential
+# offer", de uso único), mas o fluxo de credential offer não existe ainda
+# neste repo. Trocável via env var só para não deixar o valor literal
+# espalhado, mas continua sendo um único valor fixo compartilhado — sem
+# geração, expiração ou consumo de uso único real.
+PRE_AUTHORIZED_CODE = os.environ.get("PRE_AUTHORIZED_CODE", "coop-a-demo-pre-auth-code")
+
+# TTL do access_token emitido pelo /token, em segundos.
+ACCESS_TOKEN_TTL_SECONDS = int(os.environ.get("ACCESS_TOKEN_TTL_SECONDS", "3600"))
+
+# --- M2.5: nonce endpoint (c_nonce para key proof, ver nonce_endpoint.py) ---
+
+# TTL do c_nonce emitido pelo /nonce, em segundos. Curto de propósito: o
+# c_nonce só precisa viver o suficiente para o wallet montar e assinar o
+# JWT de proof-of-possession e enviar o credential request (M3) logo em
+# seguida — não é um token de sessão de longa duração como o access_token.
+C_NONCE_TTL_SECONDS = int(os.environ.get("C_NONCE_TTL_SECONDS", "300"))
