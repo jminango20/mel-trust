@@ -1,0 +1,51 @@
+# Resultado de análise laboratorial (VÁLIDO) para um lote de mel de Apis
+# mellifera já produzido e cadastrado pela cooperativa coop-a.
+#
+# Este NÃO é dado autodeclarado pelo produtor — é o laudo do laboratório
+# contratado pela certificadora sobre uma amostra física daquele lote (ver
+# docstring de certifier/pipeline.py). Como a API mock de laboratório ainda
+# não existe (escopo futuro), este .ttl estático simula a resposta que essa
+# API retornaria: os valores medidos (umidade, HMF, acidez, diástase) que a
+# certificadora vai gravar no seu próprio Fuseki (dataset "certifier") após
+# o gate SHACL.
+#
+# O lote referenciado (:Lote_Mel_Silvestre_2026_042) e sua cooperativa
+# (:CooperativaMelDoCerrado) espelham os mesmos identificadores usados em
+# coop-a/data/sample-instance.ttl, para deixar claro que este laudo é sobre
+# aquele lote específico — mas quem está inserindo esta triple aqui é o
+# certifier, a partir do laudo, não a cooperativa diretamente.
+@prefix : <https://w3id.org/agrisemantics/AGRITRUST/bee-extension#> .
+@prefix agritrust: <https://w3id.org/agrisemantics/AGRITRUST#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+
+:CooperativaMelDoCerrado
+    a agritrust:PlatformProvider, agritrust:DataConsumer ;
+    rdfs:label "Cooperativa Mel do Cerrado"@pt ;
+    agritrust:hasDID "did:web:coop-a.example" ;
+    rdfs:comment "Provedora de plataforma TaaS para apicultores associados. Registro SIE-DF-001."@pt .
+
+:Apicultor_Joao_Cerrado
+    a agritrust:DataProducer ;
+    rdfs:label "João da Silva"@pt ;
+    foaf:name "João da Silva" ;
+    agritrust:hasDID "did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSwuBV8xRoAnwWsdvktH" ;
+    :hasSupplierCadaster "SIE-DF-0123 - Apiário Cerrado Vivo (50 colmeias Apis, 10 colmeias Jataí)" .
+
+# Resultado do laboratório contratado pela certificadora (did:web:certifier.example)
+# sobre a amostra do lote :Lote_Mel_Silvestre_2026_042.
+:Lote_Mel_Silvestre_2026_042
+    a :HoneyApis ;
+    agritrust:ownedBy :Apicultor_Joao_Cerrado ;
+    :hasFloralOrigin "Aroeira (Myracrodruon urundeuva)"@pt ;
+    :hasMoistureContent "18.0"^^xsd:decimal ;
+    :hasHMFContent "30.0"^^xsd:decimal ;
+    :hasAcidity "28.5"^^xsd:decimal ;
+    :hasDiastaseActivity "12.0"^^xsd:decimal ;
+    agritrust:productionDate "2026-04-15"^^xsd:date ;
+    agritrust:batchNumber "MS-2026-042" ;
+    agritrust:qualityStatus "Em Conformidade com IN 11/2000 e Portaria 795/2023"@pt ;
+    agritrust:legalStatus "Aprovado para Comercialização"@pt ;
+    :destinationCategory "Consumo Direto"@pt ;
+    rdfs:label "Laudo Laboratorial - Lote de Mel Silvestre - Aroeira - Safra 2026/04"@pt .
