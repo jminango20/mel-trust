@@ -1,0 +1,42 @@
+# Instância inválida do coop-b — usada só para testar a rejeição do pipeline
+# (conforms=False). Diferente do coop-a (que rejeita por umidade/HMF de mel
+# de Apis), este arquivo rejeita por :MeliponaryLicenseShape
+# (validation-shapes.ttl, targetClass :Meliponary, Art. 68 da Portaria
+# 795/2023): o nó :Meliponary abaixo NÃO tem :hasEnvironmentalLicense.
+#
+# O lote de mel em si (:HoneyNativeStinglessBee) usa umidade "23.0" (mesmo
+# valor de sample-instance.ttl) especificamente porque é o único valor que
+# não dispara NENHUM resultado SHACL (nem sh:Info nem sh:Warning) das
+# property shapes de :HoneyNativeMoistureShape — ver o comentário detalhado
+# em sample-instance.ttl. Isso garante que a ÚNICA violação real reportada
+# aqui seja a de :MeliponaryLicenseShape (licença ambiental ausente), sem
+# ruído de outro resultado SHACL sobre o lote de mel em si.
+#
+# pyshacl valida todos os nós do grafo que casam com um sh:targetClass,
+# então basta o nó :Meliponary existir aqui (mesmo sem uma propriedade de
+# ligação explícita ao lote) para a validação alcançá-lo e disparar a
+# violação.
+@prefix : <https://w3id.org/agrisemantics/AGRITRUST/bee-extension#> .
+@prefix agritrust: <https://w3id.org/agrisemantics/AGRITRUST#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# Meliponário SEM licença ambiental -> dispara :MeliponaryLicenseShape
+# (sh:Violation, "Meliponário requer licença ou autorização ambiental
+# (Art. 68 da Portaria 795/2023)").
+:Meliponario_SemLicenca_Cerrado
+    a :Meliponary ;
+    rdfs:label "Meliponário Cerrado Novo (sem licença ambiental)"@pt ;
+    agritrust:ownedBy :Apicultor_Joao_Cerrado ;
+    agritrust:hasIdentifier "MEL-DF-099" .
+
+:Lote_Mel_Jatai_2026_099
+    a :HoneyNativeStinglessBee ;
+    agritrust:ownedBy :Apicultor_Joao_Cerrado ;
+    :hasMoistureContent "23.0"^^xsd:decimal ;
+    :hasHMFContent "9.0"^^xsd:decimal ;
+    :hasAcidity "45.0"^^xsd:decimal ;
+    agritrust:productionDate "2026-04-22"^^xsd:date ;
+    agritrust:batchNumber "MN-2026-099" ;
+    rdfs:comment "Espécie: Tetragonisca angustula (Jataí) - teste de rejeição por licença ambiental ausente do meliponário de origem."@pt ;
+    rdfs:label "Lote de Mel de Jataí - Meliponário sem licença - teste de rejeição"@pt .
