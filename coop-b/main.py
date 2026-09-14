@@ -33,7 +33,7 @@ def get_issuer_metadata() -> dict:
         "credential_endpoint": f"{BASE_URL}/credential",
         "credential_configurations_supported": {
             "HoneyBatchCredential": {
-                "format": "vc+sd-jwt",
+                "format": "dc+sd-jwt",
                 "vct": "https://agritrust.example/vct/honey-batch",
                 "display": [
                     {

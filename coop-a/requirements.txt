@@ -4,3 +4,16 @@ python-dotenv
 rdflib
 pyshacl
 requests
+
+# M3: emissão de SD-JWT VC (POST /credential).
+# Pacote no PyPI é `sd-jwt` (import `sd_jwt`) — implementação de referência
+# do draft-ietf-oauth-selective-disclosure-jwt, mantida sob o org
+# openid/sd-jwt-python no GitHub mas publicada no PyPI como `sd-jwt`. Traz
+# `jwcrypto` (e, transitivamente, `cryptography`) como dependência — usado
+# para gerar/carregar a chave Ed25519 do issuer (ver coop-a/keys.py) e
+# assinar o JWS. Não precisamos declarar `cryptography` separadamente.
+sd-jwt
+
+# Usado só para decodificar (sem verificar assinatura — ver credential_endpoint.py)
+# o JWT de key proof enviado pelo holder no corpo de POST /credential.
+pyjwt

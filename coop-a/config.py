@@ -43,3 +43,32 @@ ACCESS_TOKEN_TTL_SECONDS = int(os.environ.get("ACCESS_TOKEN_TTL_SECONDS", "3600"
 # JWT de proof-of-possession e enviar o credential request (M3) logo em
 # seguida — não é um token de sessão de longa duração como o access_token.
 C_NONCE_TTL_SECONDS = int(os.environ.get("C_NONCE_TTL_SECONDS", "300"))
+
+# --- M3: credential endpoint (emissão de SD-JWT VC) ---
+
+# Diretório deste arquivo (coop-a/), usado para resolver o path default da
+# chave do issuer de forma independente do cwd em que o uvicorn é iniciado.
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Path do arquivo PEM (PKCS8, sem senha) com o par de chaves Ed25519 do
+# issuer coop-a, usado para assinar (JWS) os SD-JWT VC emitidos em
+# POST /credential. NUNCA hardcoded no código — sempre via esta env var,
+# para não acoplar o path físico da chave à lógica de assinatura (facilita
+# trocar de chave/segredo por ambiente sem tocar em código). Ver keys.py:
+# se o arquivo não existir neste path, um novo par é gerado e salvo aqui
+# na primeira inicialização (decisão de MVP — ver docstring de keys.py).
+# O diretório keys/ é git-ignorado (ver .gitignore na raiz do repo):
+# a chave privada nunca é versionada, nem em ambiente de teste.
+ISSUER_KEY_PATH = os.environ.get(
+    "ISSUER_KEY_PATH", os.path.join(_THIS_DIR, "keys", "coop-a.pem")
+)
+
+# Validade (em segundos) da credencial emitida, usada para calcular o claim
+# `exp` a partir do `iat` no momento da emissão. Um lote de mel rastreado
+# não tem uma noção natural e óbvia de "expiração" da spec (diferente de,
+# por ex., uma credencial de habilitação para dirigir) — usamos um valor
+# arbitrário mas plausível de MVP (1 ano) só para popular o claim `exp`
+# exigido pela spec SD-JWT VC como sempre-visível.
+CREDENTIAL_VALIDITY_SECONDS = int(
+    os.environ.get("CREDENTIAL_VALIDITY_SECONDS", str(365 * 24 * 3600))
+)

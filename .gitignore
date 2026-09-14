@@ -8,4 +8,11 @@ __pycache__/
 .env
 *.db
 
+# Chaves privadas de issuer (Ed25519, PEM) — nunca versionadas, mesmo em
+# ambiente de teste/MVP. Ver <node>/keys.py (geração/carregamento).
+# Padrão com "**/" de propósito: cada nó (coop-a/, coop-b/, certifier/) tem
+# seu próprio subdiretório keys/ (ex. coop-a/keys/coop-a.pem), não um único
+# keys/ na raiz do repo — "keys/*.pem" sozinho só casaria com a raiz.
+**/keys/*.pem
+
 docs/
