@@ -73,3 +73,44 @@ desenho acima.
 - Proof JWT do holder sem verificação de assinatura real → M5
   (resolução did:key/did:web real).
 - Chave pública do issuer não publicada em `/.well-known/did.json` → M5.
+
+## M3 — réplica pra coop-b e certifier — ✅ testado e confirmado
+
+Mesmo mecanismo OID4VCI (`/token`, `/nonce`, `/credential`) replicado pra
+coop-b e certifier, cada um com chave Ed25519 própria
+(`<node>/keys/<node>.pem`, git-ignorado).
+
+**coop-b**: mesmo tipo de credencial `HoneyBatchCredential` de coop-a, mas
+claims refletindo mel nativo (Tetragonisca angustula/Jataí, não Apis
+mellifera) — `batchNumber` de `coop-b/data/sample-instance.ttl`
+(`MN-2026-007`). Sem `diastaseActivity` (não é parâmetro medido pra
+meliponíneo nesse fixture). Sem `certificateReference` (nenhum certificado
+real emitido ainda pra esse lote — não referencia nada por enquanto, em
+vez de inventar um placeholder que apontaria pra lugar nenhum).
+`apiaryLocation` usa coordenada fictícia própria (diferente da de coop-a),
+marcada explicitamente como dado de teste não georreferenciado.
+
+**certifier**: tipo novo `HoneyCertificationCredential`
+(`vct=.../honey-certification`), distinto de `HoneyBatchCredential` — é
+uma credencial de CERTIFICAÇÃO (laudo laboratorial sobre um lote já
+produzido), não de lote original. Corrige de quebra um bug herdado do M1:
+o metadata do certifier declarava `HoneyBatchCredential` (copiado sem
+adaptar de coop-a/coop-b), agora declara o tipo certo.
+
+Claims mapeados de propriedades já existentes na ontologia (não inventadas
+agora — ver `ontology/instances.ttl` `:Certificado_Analise_Nativa` e
+`:Processo_Colheita_*`): sempre-visíveis `batchNumber` (vínculo com o lote
+de coop-a) e `legalStatus`; disclosable `certificateType`,
+`certificateNumber`, `moistureContent`/`hmfContent`/`acidityContent`/
+`diastaseActivity` (separados), `floralOrigin`, `qualityStatus`, e um
+objeto único `analysisActivity` (`startedAtTime`/`endedAtTime`/
+`executedBy`) — extrapolação explícita do padrão `Processo_*` da ontologia,
+já que não existe instância real de "processo de análise laboratorial".
+`executedBy` usa `did:web:laboratorio-ficticio.example` (nunca
+`did:agritrust:*`, formato legado — decisão de DIDs do CLAUDE.md é
+`did:web` para instituições). `certificateReference` fecha o vínculo
+cruzado com o placeholder já citado do lado de coop-a.
+
+**Testado por Juan em 2026-09-14**: fluxo completo `/token`→`/nonce`→
+`/credential` rodado manualmente em coop-b (porta 8002) e certifier (porta
+8003), SD-JWT retornado corretamente nos dois.
