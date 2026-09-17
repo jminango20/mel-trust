@@ -45,6 +45,7 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix geo: <http://www.opengis.net/ont/geosparql#> .
 
 :CooperativaMelDoCerrado
     a agritrust:PlatformProvider, agritrust:DataConsumer ;
@@ -52,12 +53,28 @@
     agritrust:hasDID "did:web:coop-b.example" ;
     rdfs:comment "Provedora de plataforma TaaS para apicultores/meliponicultores associados. Registro SIE-DF-001."@pt .
 
+# Localização geográfica do meliponário — FICTÍCIA/de teste, adicionada no
+# M4 para o credential_endpoint ter um dado real a consultar via SPARQL em
+# vez do valor hardcoded que M3 usava. Mesma convenção GeoSPARQL de
+# ontology/instances.ttl e de coop-a/data/sample-instance.ttl (M4):
+# geo:Feature -> geo:hasGeometry -> geo:Point -> geo:asWKT. Coordenada
+# DIFERENTE da usada em coop-a (POINT(-47.9 -15.7)), para não sugerir que
+# as duas cooperativas compartilham o mesmo ponto físico.
+:Meliponario_Jatai_Cerrado_Geo
+    a geo:Feature ;
+    rdfs:label "Localização (fictícia/teste) do Meliponário Jataí do Cerrado — coop-b"@pt ;
+    geo:hasGeometry [
+        a geo:Point ;
+        geo:asWKT "POINT(-48.15 -15.83)"^^geo:wktLiteral
+    ] .
+
 :Apicultor_Joao_Cerrado
     a agritrust:DataProducer ;
     rdfs:label "João da Silva"@pt ;
     foaf:name "João da Silva" ;
     agritrust:hasDID "did:key:z6MkuQ5t9ijNZzxUMWebnh9NF2fBcNiUpmKgJhaWv3fZ7SFA" ;
-    :hasSupplierCadaster "SIE-DF-0123 - Meliponário Jataí do Cerrado (12 colmeias de Tetragonisca angustula)" .
+    :hasSupplierCadaster "SIE-DF-0123 - Meliponário Jataí do Cerrado (12 colmeias de Tetragonisca angustula)" ;
+    agritrust:hasOperatingLocation :Meliponario_Jatai_Cerrado_Geo .
 
 # Meliponário de origem do lote. Alvo de :MeliponaryLicenseShape
 # (validation-shapes.ttl): exige :hasEnvironmentalLicense (minCount 1).

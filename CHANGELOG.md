@@ -149,3 +149,31 @@ robusta antes de qualquer exposição pública.
 **Testado por Juan em 2026-09-17**: fluxo completo rodado contra o Fuseki
 real (container `coop-a-fuseki`), incluindo o caso de erro (`batch_number`
 inexistente → 404).
+
+## M4 — coop-b e certifier: mesma migração pra query SPARQL real — ✅ testado e confirmado
+
+**coop-b**: mesma estrutura de query de coop-a (schema RDF idêntico) —
+`productType="HoneyNativeStinglessBee"` (nome da classe, mesma decisão de
+coop-a), `apiaryLocation` real via geometria GeoSPARQL nova em
+`coop-b/data/sample-instance.ttl` (coordenada fictícia distinta da de
+coop-a), laboratório e produtor reais. Sem schema mismatch — mesma
+estrutura de dado de coop-a.
+
+**certifier**: migração PARCIAL, schema mismatch real e documentado.
+Migraram pra SPARQL: `legalStatus` (sempre visível), `qualityStatus`,
+`floralOrigin`, `moistureContent`/`hmfContent`/`acidityContent`/
+`diastaseActivity`. Continuam hardcoded — sem tripla correspondente em
+`certifier/data/sample-lab-result-valid.ttl` nem propriedade na ontologia
+atual: `certificateType`, `certificateNumber`, `analysisActivity`,
+`certificateReference` (ver
+`docs/notas-arquitetura/certifier-claims-hardcoded-m4.md`, não
+versionado — resolução prevista pra M5.5/PROV-O de certificação, não é
+lacuna a fechar agora). Query do certifier ganhou uma guarda mínima
+(`a ?anyType`, exige QUALQUER rdf:type) pra não casar com recurso
+genérico só por ter `batchNumber`+`legalStatus` — não é filtro real de
+domínio; known issue registrado (`docs/known-issues.md`) pra endurecer
+antes do verifier-demo (M9.5) fazer consulta federada com mais volume.
+
+**Testado por Juan em 2026-09-17**: fluxo completo rodado contra os
+Fuseki reais de coop-b (porta 3031) e certifier (porta 3032), incluindo
+caso de erro (`batch_number` inexistente → 404 nos dois).

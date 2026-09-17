@@ -74,3 +74,25 @@ ISSUER_KEY_PATH = os.environ.get(
 CREDENTIAL_VALIDITY_SECONDS = int(
     os.environ.get("CREDENTIAL_VALIDITY_SECONDS", str(365 * 24 * 3600))
 )
+
+# --- M4: leitura do Fuseki (SPARQL SELECT) para montar claims reais ---
+#
+# Mesmos nomes de env var que pipeline.py (M1.5) já usa para ESCREVER no
+# Fuseki (INSERT DATA via /update) — reaproveitados aqui para LER (SELECT via
+# /sparql): é o mesmo dataset "certifier", a mesma instância Fuseki, só um
+# endpoint HTTP diferente dentro dela. Mesma decisão de nomenclatura de
+# coop-a/coop-b.
+FUSEKI_URL = os.environ.get("FUSEKI_URL", "http://localhost:3032/certifier")
+FUSEKI_ADMIN_USER = os.environ.get("FUSEKI_ADMIN_USER", "admin")
+FUSEKI_ADMIN_PASSWORD = os.environ.get("FUSEKI_ADMIN_PASSWORD")
+
+# Batch number default usado quando o corpo de POST /credential não informa
+# um `batch_number` explícito (extensão própria do MVP). AQUI, diferente de
+# coop-a/coop-b, este valor identifica o LOTE SOBRE O QUAL O LAUDO FALA (o
+# laudo em si não tem um "número de lote" próprio — ele referencia, via
+# agritrust:batchNumber, o mesmo lote que a cooperativa já cadastrou; ver
+# certifier/data/sample-lab-result-valid.ttl, :Lote_Mel_Silvestre_2026_042).
+# Mesmo valor literal que M3 tinha hardcoded como claim `batchNumber` da
+# credencial de certificação ("MS-2026-042") — agora é o fallback de qual
+# laudo buscar no Fuseki via essa chave.
+DEFAULT_BATCH_NUMBER = os.environ.get("DEFAULT_BATCH_NUMBER", "MS-2026-042")
