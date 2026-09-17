@@ -177,3 +177,38 @@ antes do verifier-demo (M9.5) fazer consulta federada com mais volume.
 **Testado por Juan em 2026-09-17**: fluxo completo rodado contra os
 Fuseki reais de coop-b (porta 3031) e certifier (porta 3032), incluindo
 caso de erro (`batch_number` inexistente → 404 nos dois).
+
+## M9.5 — verifier-demo: `GET /verify/{batch_number}` com SPARQL federado real — ✅ testado e confirmado
+
+Primeira fatia do papel de auditor externo do verifier-demo: dado um
+`batch_number`, descobre em qual cooperativa (coop-a OU coop-b — nunca as
+duas) o lote foi produzido e se já existe certificação correspondente no
+certifier. NÃO implementado ainda (escopo de entrega futura, em cima
+desta): checagem ODRL de propósito, validação SHACL da resposta,
+conferência de hash on-chain (M11).
+
+**SPARQL federado de verdade** (`SERVICE`), não simulação em Python: uma
+única query SPARQL enviada ao Fuseki do coop-a (nó de entrada fixo,
+escolha arbitrária mas consistente), com `UNION` pra achar o lote (local
+em coop-a, ou via `SERVICE` remoto em coop-b) e `OPTIONAL SERVICE` pra
+certificação no certifier. Nenhum dado das 3 organizações é replicado no
+verifier-demo — cada leitura é direta na fonte, no momento da
+verificação.
+
+**Achado de infraestrutura relevante**: uma tentativa inicial concluiu
+(erroneamente) que `SERVICE` não funcionava entre instâncias Fuseki
+standalone deste projeto. Investigação mostrou que a causa real era rede
+Docker — cada nó roda em `docker-compose` separado, com rede isolada;
+`localhost` visto de dentro do container do coop-a aponta pro próprio
+container, não pro host onde coop-b/certifier publicam suas portas.
+Corrigido com `host.docker.internal` nas URLs usadas dentro das cláusulas
+`SERVICE`, e `extra_hosts: host.docker.internal:host-gateway` adicionado
+aos 3 `docker-compose.yml` (portabilidade Linux, onde esse hostname não
+existe por padrão como no Docker Desktop). Relato completo em
+`docs/notas-arquitetura/verifier-demo-service-federado.md` (não
+versionado).
+
+**Testado por Juan em 2026-09-17**: os 3 cenários via HTTP real —
+`MS-2026-042` (achado em coop-a + certificação), `MN-2026-007` (achado em
+coop-b, `certification: null`, sem laudo ainda — não é erro),
+`LOTE-INEXISTENTE` (404).

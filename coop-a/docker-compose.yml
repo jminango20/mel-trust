@@ -24,6 +24,17 @@ services:
       FUSEKI_DATASET_1: coop-a
     volumes:
       - fuseki-data:/fuseki
+    # Permite que este Fuseki resolva `host.docker.internal` para o IP do
+    # host — necessário pra cláusula SPARQL SERVICE do verifier-demo (M9.5)
+    # alcançar os OUTROS Fuseki (coop-b/certifier) publicados no host, já
+    # que cada nó roda em docker-compose SEPARADO, sem rede compartilhada
+    # entre containers. Docker Desktop (Windows/Mac) já resolve
+    # `host.docker.internal` automaticamente; `host-gateway` é o valor
+    # especial que faz o mesmo funcionar em Docker Engine no Linux (onde
+    # esse hostname não existe por padrão) — ver
+    # docs/notas-arquitetura/verifier-demo-service-federado.md.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   fuseki-data:

@@ -28,6 +28,11 @@ services:
       FUSEKI_DATASET_1: coop-b
     volumes:
       - fuseki-data:/fuseki
+    # Ver comentário equivalente em coop-a/docker-compose.yml: permite que
+    # SERVICE de outro Fuseki alcance ESTE container via
+    # host.docker.internal, funcionando também em Docker Engine/Linux.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   fuseki-data:
