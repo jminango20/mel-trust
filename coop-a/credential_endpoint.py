@@ -38,21 +38,33 @@ anteriores):
    não implementa esse endpoint — omitir o campo é o comportamento correto
    quando o issuer não o suporta (a spec o define como opcional).
 
-Fluxo de dados fixos vs. dinâmicos: os claims da credencial (lote de mel,
-laboratório, produtor) são HARDCODED neste milestone — inspirados em
-coop-a/data/sample-instance.ttl, sem query real ao Fuseki. M4 troca isso por
-uma consulta SPARQL real pós-validação SHACL.
+Fluxo de dados fixos vs. dinâmicos: em M3, os claims da credencial (lote de
+mel, laboratório, produtor) eram HARDCODED, inspirados em
+coop-a/data/sample-instance.ttl mas sem query real ao Fuseki. Este é o M4:
+a Parte 4 (montagem dos claims) agora roda uma consulta SPARQL SELECT real
+contra o dataset "coop-a" do Fuseki (já populado pelo pipeline SHACL de
+M1.5/pipeline.py) — o resto do arquivo (autenticação, proof, c_nonce)
+permanece idêntico ao M3.
 """
+import re
 import time
 
 import jwt as pyjwt
+import requests
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from jwcrypto.jwk import JWK
 from sd_jwt.common import SDObj
 from sd_jwt.issuer import SDJWTIssuer
 
-from config import CREDENTIAL_VALIDITY_SECONDS, DID_WEB
+from config import (
+    CREDENTIAL_VALIDITY_SECONDS,
+    DEFAULT_BATCH_NUMBER,
+    DID_WEB,
+    FUSEKI_ADMIN_PASSWORD,
+    FUSEKI_ADMIN_USER,
+    FUSEKI_URL,
+)
 from keys import get_issuer_key
 from nonce_endpoint import is_valid_c_nonce
 from token_endpoint import is_valid_access_token
@@ -77,6 +89,155 @@ SD_JWT_TYP = "dc+sd-jwt"
 # conforme OID4VCI ("JWT Proof Type"). Não é verificado estritamente aqui
 # (ver simplificação de proof abaixo), só documentado.
 PROOF_JWT_TYP = "openid4vci-proof+jwt"
+
+
+# --- M4: query SPARQL contra o Fuseki do coop-a ---
+#
+# Namespaces usados na instância (coop-a/data/sample-instance.ttl) — os
+# MESMOS prefixos/URIs declarados no cabeçalho daquele .ttl. Repetidos aqui
+# como literais porque esta query é montada em Python (f-string), não lida
+# de um arquivo .rq separado — não há um arquivo de queries neste projeto
+# ainda, e criar um só para esta única query seria escopo extra não pedido.
+_SPARQL_PREFIXES = """
+PREFIX : <https://w3id.org/agrisemantics/AGRITRUST/bee-extension#>
+PREFIX agritrust: <https://w3id.org/agrisemantics/AGRITRUST#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+"""
+
+# Query SELECT que busca, a partir de um agritrust:batchNumber, tudo que a
+# Parte 4 precisa para montar os claims da credencial. Comentários por
+# campo (POR QUÊ cada um está aqui, não só o quê):
+#
+# - ?batch / ?productType: `?batch a ?productType` NÃO é OPTIONAL nem tem
+#   FILTER adicional porque, na instância atual, o recurso do lote
+#   (:Lote_Mel_Silvestre_2026_042) só tem UM rdf:type assertado (:HoneyApis)
+#   — não há ambiguidade de "qual tipo pegar" a resolver aqui. Se um lote
+#   viesse a ter múltiplos rdf:type (ex.: uma superclasse OWL inferida),
+#   esta query pegaria qualquer um deles arbitrariamente — não é um
+#   problema hoje porque `inference="none"` no pipeline SHACL (M1.5) não
+#   materializa hierarquia de classes na instância.
+# - ?moisture / ?hmf / ?acidity: cada um em seu próprio OPTIONAL porque nem
+#   todo lote necessariamente tem os três parâmetros laboratoriais
+#   preenchidos — um lote incompleto não deve fazer a query inteira falhar
+#   em retornar zero linhas. (hasDiastaseActivity não é buscado aqui: não é
+#   um claim que M3 definiu para a credencial de lote — buscar um campo que
+#   nunca vira claim seria código morto.)
+# - ?producer: obrigatório (não OPTIONAL) via agritrust:ownedBy, porque um
+#   lote sem produtor dono seria um dado de domínio incompleto — se isso
+#   acontecer, preferimos que a query não devolva parte dos claims de forma
+#   silenciosa (ownedBy ausente já teria sido barrado por SHACL/minCount se
+#   a shape exigir, mas a query aqui não assume isso).
+# - ?producerLabel / ?producerFoafName: dois OPTIONAL separados (não um
+#   único com COALESCE dentro do WHERE) porque rdfs:label e foaf:name são
+#   propriedades semanticamente diferentes que por acaso convergem no mesmo
+#   valor nesta instância — o COALESCE fica em Python (mais legível que
+#   aninhar BIND/COALESCE em SPARQL para uma prioridade simples).
+# - ?producerDID: agritrust:hasDID do produtor — chave para o claim
+#   `producerDID` (M3 já decidiu esse claim como disclosable).
+# - ?geoWKT / ?geoLabel: todo o bloco de geolocalização é UM OPTIONAL
+#   (aninhado, não três OPTIONAL soltos) porque os três triplos
+#   (hasOperatingLocation -> hasGeometry -> asWKT) são uma cadeia: só faz
+#   sentido buscar o rótulo do geo:Feature SE a cadeia geométrica inteira
+#   existir. Um produtor sem localização cadastrada não deve gerar linhas
+#   "meio nulas" a mais na tabela de resultado.
+_CLAIMS_QUERY_TEMPLATE = _SPARQL_PREFIXES + """
+SELECT ?productType ?moisture ?hmf ?acidity
+       ?producerLabel ?producerFoafName ?producerDID ?geoWKT ?geoLabel
+WHERE {
+  ?batch agritrust:batchNumber %(batch_number)s ;
+         a ?productType ;
+         agritrust:ownedBy ?producer .
+  OPTIONAL { ?batch :hasMoistureContent ?moisture }
+  OPTIONAL { ?batch :hasHMFContent ?hmf }
+  OPTIONAL { ?batch :hasAcidity ?acidity }
+  OPTIONAL { ?producer rdfs:label ?producerLabel }
+  OPTIONAL { ?producer foaf:name ?producerFoafName }
+  OPTIONAL { ?producer agritrust:hasDID ?producerDID }
+  OPTIONAL {
+    ?producer agritrust:hasOperatingLocation ?geoFeature .
+    ?geoFeature geo:hasGeometry ?geom .
+    ?geom geo:asWKT ?geoWKT .
+    OPTIONAL { ?geoFeature rdfs:label ?geoLabel }
+  }
+}
+LIMIT 1
+"""
+
+# `POINT(lon lat)` — único formato de geometria usado neste projeto (ver
+# CLAUDE.md/instances.ttl: sempre geo:Point via geo:asWKT). Regex simples em
+# vez de uma lib GIS (ex.: shapely) de propósito: shapely existe para
+# operações geométricas (interseção, buffer, reprojeção etc.) que este
+# projeto nunca faz — aqui só extraímos dois números de um literal textual
+# com um formato fixo e conhecido. Trazer uma dependência geoespacial só
+# para isso seria peso morto.
+_WKT_POINT_RE = re.compile(r"POINT\s*\(\s*(-?[\d.]+)\s+(-?[\d.]+)\s*\)")
+
+
+def _sparql_literal(value: str) -> str:
+    """Escapa uma string simples para uso como literal RDF dentro da query.
+
+    Suficiente para este caso de uso (batch_number vindo do corpo da
+    requisição, sem aspas nem quebras de linha esperadas) — não é um
+    escapador SPARQL genérico e completo.
+    """
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _parse_wkt_point(wkt: str) -> tuple[float, float]:
+    """Extrai (lat, lon) de um literal `POINT(lon lat)` (ordem WKT: X=lon, Y=lat)."""
+    match = _WKT_POINT_RE.search(wkt)
+    if not match:
+        raise ValueError(f"Literal WKT não reconhecido como POINT(lon lat): {wkt!r}")
+    lon_str, lat_str = match.groups()
+    return float(lat_str), float(lon_str)
+
+
+def query_batch_claims(batch_number: str) -> dict | None:
+    """Consulta o Fuseki do coop-a (SPARQL SELECT) pelos dados do lote.
+
+    Retorna um dict com os campos brutos da primeira linha de resultado, ou
+    None se o batch_number não existir no grafo (query sem resultados) —
+    o chamador decide o que fazer (404), esta função não decide HTTP status.
+
+    Autenticação/URL: mesma convenção de pipeline.py (Basic Auth com
+    FUSEKI_ADMIN_USER/FUSEKI_ADMIN_PASSWORD contra {FUSEKI_URL}), só que
+    aqui é GET/POST em /sparql (leitura) em vez de /update (escrita).
+    """
+    query = _CLAIMS_QUERY_TEMPLATE % {"batch_number": _sparql_literal(batch_number)}
+
+    response = requests.post(
+        f"{FUSEKI_URL}/sparql",
+        data={"query": query},
+        headers={"Accept": "application/sparql-results+json"},
+        auth=(FUSEKI_ADMIN_USER, FUSEKI_ADMIN_PASSWORD),
+        timeout=30,
+    )
+    response.raise_for_status()
+
+    bindings = response.json().get("results", {}).get("bindings", [])
+    if not bindings:
+        return None
+
+    row = bindings[0]
+
+    def _val(key: str) -> str | None:
+        cell = row.get(key)
+        return cell["value"] if cell else None
+
+    return {
+        "productType": _val("productType"),
+        "moisture": _val("moisture"),
+        "hmf": _val("hmf"),
+        "acidity": _val("acidity"),
+        "producerLabel": _val("producerLabel"),
+        "producerFoafName": _val("producerFoafName"),
+        "producerDID": _val("producerDID"),
+        "geoWKT": _val("geoWKT"),
+        "geoLabel": _val("geoLabel"),
+    }
 
 
 def _oauth_error(status_code: int, error: str, description: str, www_authenticate: str | None = None) -> JSONResponse:
@@ -168,6 +329,17 @@ async def credential_endpoint(request: Request):
             f"Esperado: {CREDENTIAL_CONFIGURATION_ID!r}.",
         )
 
+    # `batch_number`: campo OPCIONAL, EXTENSÃO PRÓPRIA DESTE MVP, NÃO faz
+    # parte da spec OID4VCI (o Credential Request da spec não tem noção de
+    # "escolher um lote" — isso normalmente seria resolvido antes, no fluxo
+    # de Credential Offer, que amarraria a oferta a um `credential_identifier`
+    # específico já pré-associado no lado do issuer; este repo ainda não
+    # implementa Credential Offer). Aqui aceitamos esse campo extra ao lado
+    # de `credential_configuration_id` só para ter algum jeito de escolher
+    # QUAL lote consultar no Fuseki; se ausente, cai no
+    # DEFAULT_BATCH_NUMBER (mesmo valor literal que M3 tinha hardcoded).
+    batch_number = body.get("batch_number") or DEFAULT_BATCH_NUMBER
+
     # --- 3. Proof de posse de chave (key proof) ---
     proof = body.get("proof")
     if not isinstance(proof, dict) or proof.get("proof_type") != "jwt" or not proof.get("jwt"):
@@ -198,7 +370,64 @@ async def credential_endpoint(request: Request):
     holder_jwk_dict = proof_header.get("jwk")
     holder_key = JWK(**holder_jwk_dict) if holder_jwk_dict else None
 
-    # --- 4. Monta os claims da credencial (dados FIXOS — M4 pluga Fuseki) ---
+    # --- 4. Monta os claims da credencial (M4: query SPARQL real ao Fuseki) ---
+    try:
+        row = query_batch_claims(batch_number)
+    except requests.RequestException as exc:
+        # Falha de infraestrutura (Fuseki fora do ar, timeout, credencial
+        # de admin errada etc.) — não é o mesmo caso de "lote não existe".
+        # 502 porque o coop-a (issuer) depende de um serviço upstream
+        # (Fuseki) que falhou ao responder.
+        return _oauth_error(502, "server_error", f"Falha ao consultar o Fuseki: {exc}")
+
+    if row is None:
+        # Lote pedido não existe no grafo do coop-a — não emitimos uma
+        # credencial vazia/quebrada, retornamos 404. Não é um erro OAuth
+        # (não está na lista de `error` de RFC 6749/OID4VCI), mas o mesmo
+        # formato de corpo JSON (`_oauth_error`) é reaproveitado por
+        # consistência com o resto deste arquivo.
+        return _oauth_error(
+            404,
+            "invalid_request",
+            f"Nenhum lote encontrado no Fuseki (dataset coop-a) com "
+            f"agritrust:batchNumber = {batch_number!r}.",
+        )
+
+    # `productType`: pega o NOME LOCAL (fragmento após '#') da URI de
+    # rdf:type do lote — ex. da URI
+    # https://w3id.org/agrisemantics/AGRITRUST/bee-extension#HoneyApis
+    # extrai a string "HoneyApis". DECISÃO CONSCIENTE (não é bug nem
+    # regressão acidental de M3): M3 usava o rótulo humano "Apis mellifera"
+    # (hardcoded), mas esse rótulo vem de rdfs:label em bee-extension.ttl,
+    # que NÃO é carregado no Fuseki (só a instância de dados é inserida lá,
+    # ver pipeline.py) — não há como obter "Apis mellifera" via SPARQL
+    # contra este dataset hoje. Em vez de reintroduzir esse rótulo hardcoded
+    # (o que reverteria o ganho de M4 de vir tudo de dado real), usamos o
+    # nome local da classe, que É recuperável via SPARQL puro.
+    product_type = row["productType"].rsplit("#", 1)[-1].rsplit("/", 1)[-1]
+
+    # producerName: prioriza foaf:name sobre rdfs:label quando ambos
+    # existem (foaf:name é uma propriedade semanticamente mais específica
+    # para "nome de pessoa"; rdfs:label é um rótulo genérico que, nesta
+    # instância, por acaso tem o mesmo valor). Fallback para rdfs:label se
+    # foaf:name não estiver presente.
+    producer_name = row["producerFoafName"] or row["producerLabel"]
+
+    # Geolocalização: parse manual do WKT (`POINT(lon lat)`) — ver
+    # `_parse_wkt_point` acima para a justificativa de não usar lib GIS.
+    # Todo o bloco de geo é OPTIONAL na query (ver comentários da query),
+    # então `geoWKT` pode vir None se o produtor não tiver localização
+    # cadastrada — nesse caso, omitimos o claim inteiro em vez de inventar
+    # coordenadas.
+    apiary_location = None
+    if row["geoWKT"]:
+        lat, lon = _parse_wkt_point(row["geoWKT"])
+        apiary_location = {
+            "lat": lat,
+            "lon": lon,
+            "description": row["geoLabel"] or "",
+        }
+
     now = int(time.time())
     exp = now + CREDENTIAL_VALIDITY_SECONDS
 
@@ -224,63 +453,84 @@ async def credential_endpoint(request: Request):
         # mellifera, lote X" sem precisar negociar disclosure nenhuma). Não
         # são dados sensíveis por si — não identificam o produtor nem
         # revelam localização exata.
-        "batchNumber": "MS-2026-042",
-        "productType": "Apis mellifera",
-
-        # --- Disclosable (cada SDObj vira uma Disclosure própria) ---
-        #
-        # Geolocalização do apiário: um objeto único (lat/lon/descrição) é
-        # UMA Disclosure, não decomposto em disclosures separadas para lat e
-        # lon. Justificativa: lat e lon isolados não têm utilidade
-        # semântica um sem o outro (um lat sozinho não localiza nada) — não
-        # há cenário real de "quero provar só a latitude, não a longitude".
-        # Tratar como uma unidade atômica também evita um problema sutil de
-        # SD-JWT: se lat e lon fossem disclosures INDEPENDENTES, um
-        # verificador que recebesse só uma delas não teria garantia
-        # criptográfica de que as duas vieram do MESMO par originalmente
-        # emitido (embora aqui isso não seja uma ameaça real dado que ambas
-        # sempre são reveladas juntas na prática) — mas mantém o modelo mais
-        # simples de raciocinar.
-        SDObj("apiaryLocation"): {
-            "lat": -15.7,
-            "lon": -47.9,
-            "description": "Apiário Cerrado Vivo, SIE-DF-0123",
-        },
-
-        # Dados de laboratório: TRÊS disclosures separadas (uma por
-        # sub-campo), não um objeto único "labResults" com uma única
-        # Disclosure. Justificativa: minimização de dados por campo real —
-        # um verificador que só precisa confirmar conformidade de umidade
-        # (ex.: gate SHACL do certifier, que já valida limite de umidade por
-        # espécie conforme CLAUDE.md/validation-shapes.ttl) não deveria
-        # precisar obrigar a revelação de HMF e acidez juntos só porque
-        # estavam agrupados em um único objeto disclosable. Separar por
-        # sub-campo é o uso mais literal do propósito do SD-JWT: cada fato
-        # discreto é seu próprio Disclosure, disclosable independentemente.
-        SDObj("moistureContent"): "18.5",
-        SDObj("hmfContent"): "12.3",
-        SDObj("acidityContent"): "32.1",
-
-        # Identidade do produtor: NOME e DID como disclosures SEPARADAS, não
-        # agrupadas em um objeto "producer" único. Justificativa: são usos
-        # diferentes por consumidores diferentes — um comprador que só quer
-        # verificar proveniência via ancoragem em blockchain (M11) precisa
-        # do `producerDID` (chave para consultar o AssetRegistry.sol) mas
-        # não necessariamente do nome civil da pessoa; já uma auditoria
-        # regulatória (MAPA) pode exigir o nome sem precisar do material de
-        # chave. Separar permite que cada apresentação (OID4VP, fora do
-        # escopo deste milestone) revele só o que o caso de uso exige.
-        SDObj("producerName"): "João da Silva",
-        SDObj("producerDID"): "did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSwuBV8xRoAnwWsdvktH",
-
-        # Referência ao certificado emitido pelo certifier (M4/certifier —
-        # ainda não existe de fato; valor placeholder plausível). Disclosable
-        # porque nem toda apresentação da credencial de lote precisa expor o
-        # vínculo com o processo de certificação específico (isso é mais
-        # relevante para auditoria de cadeia de custódia / PROV-O do que
-        # para uma verificação simples de "este lote é de mel de Apis").
-        SDObj("certificateReference"): "urn:agritrust:certifier:cert:CERT-2026-042",
+        "batchNumber": batch_number,
+        "productType": product_type,
     }
+
+    # --- Disclosable (cada SDObj vira uma Disclosure própria) ---
+    #
+    # Geolocalização do apiário: um objeto único (lat/lon/descrição) é
+    # UMA Disclosure, não decomposto em disclosures separadas para lat e
+    # lon. Justificativa: lat e lon isolados não têm utilidade
+    # semântica um sem o outro (um lat sozinho não localiza nada) — não
+    # há cenário real de "quero provar só a latitude, não a longitude".
+    # Tratar como uma unidade atômica também evita um problema sutil de
+    # SD-JWT: se lat e lon fossem disclosures INDEPENDENTES, um
+    # verificador que recebesse só uma delas não teria garantia
+    # criptográfica de que as duas vieram do MESMO par originalmente
+    # emitido (embora aqui isso não seja uma ameaça real dado que ambas
+    # sempre são reveladas juntas na prática) — mas mantém o modelo mais
+    # simples de raciocinar.
+    #
+    # M4: só incluímos o claim se a query realmente encontrou uma
+    # localização (ver bloco OPTIONAL da query) — omitir o claim quando o
+    # dado não existe é preferível a uma Disclosure com lat/lon None,
+    # porque um None disclosável não corresponde a nenhum dado real do
+    # produtor.
+    if apiary_location is not None:
+        user_claims[SDObj("apiaryLocation")] = apiary_location
+
+    # Dados de laboratório: TRÊS disclosures separadas (uma por
+    # sub-campo), não um objeto único "labResults" com uma única
+    # Disclosure. Justificativa: minimização de dados por campo real —
+    # um verificador que só precisa confirmar conformidade de umidade
+    # (ex.: gate SHACL do certifier, que já valida limite de umidade por
+    # espécie conforme CLAUDE.md/validation-shapes.ttl) não deveria
+    # precisar obrigar a revelação de HMF e acidez juntos só porque
+    # estavam agrupados em um único objeto disclosable. Separar por
+    # sub-campo é o uso mais literal do propósito do SD-JWT: cada fato
+    # discreto é seu próprio Disclosure, disclosable independentemente.
+    #
+    # M4: cada um só entra em user_claims se a query retornou valor (ver
+    # OPTIONAL de cada um na query) — um lote sem, por exemplo,
+    # hasHMFContent preenchido não deveria gerar um claim "hmfContent": None
+    # disclosável, que não corresponde a um fato real do lote.
+    if row["moisture"] is not None:
+        user_claims[SDObj("moistureContent")] = row["moisture"]
+    if row["hmf"] is not None:
+        user_claims[SDObj("hmfContent")] = row["hmf"]
+    if row["acidity"] is not None:
+        user_claims[SDObj("acidityContent")] = row["acidity"]
+
+    # Identidade do produtor: NOME e DID como disclosures SEPARADAS, não
+    # agrupadas em um objeto "producer" único. Justificativa: são usos
+    # diferentes por consumidores diferentes — um comprador que só quer
+    # verificar proveniência via ancoragem em blockchain (M11) precisa
+    # do `producerDID` (chave para consultar o AssetRegistry.sol) mas
+    # não necessariamente do nome civil da pessoa; já uma auditoria
+    # regulatória (MAPA) pode exigir o nome sem precisar do material de
+    # chave. Separar permite que cada apresentação (OID4VP, fora do
+    # escopo deste milestone) revele só o que o caso de uso exige.
+    if producer_name is not None:
+        user_claims[SDObj("producerName")] = producer_name
+    if row["producerDID"] is not None:
+        user_claims[SDObj("producerDID")] = row["producerDID"]
+
+    # Referência ao certificado emitido pelo certifier (certifier — ainda
+    # não existe de fato; valor placeholder plausível). Disclosable
+    # porque nem toda apresentação da credencial de lote precisa expor o
+    # vínculo com o processo de certificação específico (isso é mais
+    # relevante para auditoria de cadeia de custódia / PROV-O do que
+    # para uma verificação simples de "este lote é de mel de Apis").
+    #
+    # M4 NÃO resolve isso via SPARQL: não há correspondente real no grafo
+    # do coop-a para "referência de certificado" — esse dado nasce do lado
+    # do certifier (outro nó, fora do dataset "coop-a" do Fuseki), que
+    # ainda não existe neste repo. Mantido como o MESMO placeholder
+    # hardcoded que M3 já tinha, deliberadamente, até o nó certifier
+    # existir e este claim poder vir de uma fonte real (provavelmente via
+    # SPARQL federado, não deste dataset local).
+    user_claims[SDObj("certificateReference")] = "urn:agritrust:certifier:cert:CERT-2026-042"
 
     # --- 5. Monta e assina o SD-JWT ---
     issuer_key = get_issuer_key()

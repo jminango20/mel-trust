@@ -72,3 +72,21 @@ ISSUER_KEY_PATH = os.environ.get(
 CREDENTIAL_VALIDITY_SECONDS = int(
     os.environ.get("CREDENTIAL_VALIDITY_SECONDS", str(365 * 24 * 3600))
 )
+
+# --- M4: leitura do Fuseki (SPARQL SELECT) para montar claims reais ---
+#
+# Mesmos nomes de env var que pipeline.py (M1.5) já usa para ESCREVER no
+# Fuseki (INSERT DATA via /update) — aqui reaproveitados para LER (SELECT via
+# /sparql), porque é o mesmo dataset "coop-a", a mesma instância Fuseki, só
+# um endpoint HTTP diferente dentro dela. Não faz sentido introduzir nomes
+# de env var paralelos (ex.: FUSEKI_QUERY_URL) para a mesma credencial/host.
+FUSEKI_URL = os.environ.get("FUSEKI_URL", "http://localhost:3030/coop-a")
+FUSEKI_ADMIN_USER = os.environ.get("FUSEKI_ADMIN_USER", "admin")
+FUSEKI_ADMIN_PASSWORD = os.environ.get("FUSEKI_ADMIN_PASSWORD")
+
+# Batch number default usado quando o corpo de POST /credential não informa
+# um `batch_number` explícito (extensão própria do MVP, ver
+# credential_endpoint.py Parte 2). Mesmo valor literal que M3 tinha
+# hardcoded como ÚNICO claim de lote — agora é só o fallback de qual lote
+# buscar no Fuseki, não mais o próprio valor do claim.
+DEFAULT_BATCH_NUMBER = os.environ.get("DEFAULT_BATCH_NUMBER", "MS-2026-042")

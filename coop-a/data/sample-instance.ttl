@@ -17,6 +17,7 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix geo: <http://www.opengis.net/ont/geosparql#> .
 
 :CooperativaMelDoCerrado
     a agritrust:PlatformProvider, agritrust:DataConsumer ;
@@ -24,12 +25,30 @@
     agritrust:hasDID "did:web:coop-a.example" ;
     rdfs:comment "Provedora de plataforma TaaS para apicultores associados. Registro SIE-DF-001."@pt .
 
+# Localização geográfica do apiário — FICTÍCIA/de teste (não é uma
+# coordenada real do produtor). Adicionada no M4 para que o credential
+# endpoint tenha um dado real a consultar via SPARQL em vez do valor
+# hardcoded que M3 usava. Convenção GeoSPARQL idêntica à já usada em
+# ontology/instances.ttl (:Apiario_CerradoVivo_Geo): geo:Feature com
+# geo:hasGeometry -> geo:Point -> geo:asWKT "POINT(lon lat)". Coordenada
+# escolhida deliberadamente DIFERENTE da usada em coop-b (que também é
+# fictícia, ver coop-b/data/sample-instance.ttl), para não sugerir que as
+# duas cooperativas compartilham o mesmo ponto físico.
+:Apiario_CerradoVivo_Geo_CoopA
+    a geo:Feature ;
+    rdfs:label "Localização (fictícia/teste) do Apiário Cerrado Vivo — coop-a"@pt ;
+    geo:hasGeometry [
+        a geo:Point ;
+        geo:asWKT "POINT(-47.9 -15.7)"^^geo:wktLiteral
+    ] .
+
 :Apicultor_Joao_Cerrado
     a agritrust:DataProducer ;
     rdfs:label "João da Silva"@pt ;
     foaf:name "João da Silva" ;
     agritrust:hasDID "did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSwuBV8xRoAnwWsdvktH" ;
-    :hasSupplierCadaster "SIE-DF-0123 - Apiário Cerrado Vivo (50 colmeias Apis, 10 colmeias Jataí)" .
+    :hasSupplierCadaster "SIE-DF-0123 - Apiário Cerrado Vivo (50 colmeias Apis, 10 colmeias Jataí)" ;
+    agritrust:hasOperatingLocation :Apiario_CerradoVivo_Geo_CoopA .
 
 :Lote_Mel_Silvestre_2026_042
     a :HoneyApis ;

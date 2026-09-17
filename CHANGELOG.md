@@ -114,3 +114,38 @@ cruzado com o placeholder já citado do lado de coop-a.
 **Testado por Juan em 2026-09-14**: fluxo completo `/token`→`/nonce`→
 `/credential` rodado manualmente em coop-b (porta 8002) e certifier (porta
 8003), SD-JWT retornado corretamente nos dois.
+
+## M4 — coop-a: claims via query SPARQL real (Fuseki) — ✅ testado e confirmado
+
+Substitui os claims hardcoded do M3 por uma query SPARQL real contra o
+Fuseki do coop-a (dataset populado pelo gate SHACL de M1.5). Busca o lote
+por `agritrust:batchNumber` (aceita `batch_number` opcional no corpo da
+requisição — extensão própria do MVP, não parte da spec OID4VCI; se
+ausente, usa o mesmo valor fixo do M3 como default, já que não existe
+mecanismo de "escolha de lote"/credential offer no repo ainda).
+
+**Duas mudanças de valor em relação a M3, decisões conscientes:**
+- `productType` agora é o nome local da classe RDF (`"HoneyApis"`), não um
+  rótulo humano (`"Apis mellifera"`) — `bee-extension.ttl` (onde vive o
+  `rdfs:label` correspondente) não é carregado no Fuseki, só a instância;
+  resolver isso por SPARQL puro exigiria também indexar a ontologia no
+  triple store, fora de escopo aqui.
+- `apiaryLocation` agora é dado real: `coop-a/data/sample-instance.ttl`
+  ganhou uma geometria GeoSPARQL (`geo:Feature`/`geo:hasGeometry`/
+  `geo:asWKT`, mesma convenção de `ontology/instances.ttl`), coordenada
+  fictícia de teste, distinta da usada em coop-b. A query faz parse manual
+  do WKT (`POINT(lon lat)`) — regex simples, não lib GIS.
+
+`certificateReference` continua sem correspondente no grafo de coop-a
+(dado pertence ao lado do certifier) — segue como placeholder, não
+resolvido por esta query. Lote inexistente → `404`, não credencial vazia.
+
+**Known issue registrado** (`docs/known-issues.md`, não versionado —
+mesma situação de CLAUDE.md/CHANGELOG.md): escape SPARQL do `batch_number`
+é simples (aspas/barra), não é hardening completo contra injection —
+aceitável pro MVP local, precisa de parâmetros tipados/lib de escaping
+robusta antes de qualquer exposição pública.
+
+**Testado por Juan em 2026-09-17**: fluxo completo rodado contra o Fuseki
+real (container `coop-a-fuseki`), incluindo o caso de erro (`batch_number`
+inexistente → 404).
