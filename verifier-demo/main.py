@@ -6,9 +6,10 @@ SHACL de entrada — ele é um consumidor: consulta os outros nós via consulta
 federada (ver verify_endpoint.py para a decisão entre `SERVICE` de verdade
 e 3 queries orquestradas em Python).
 
-M9.5 (esta entrega): `GET /verify/{batch_number}` — primeira fatia do fluxo
-de verificação, sem ODRL, sem validação SHACL da resposta e sem checagem
-on-chain ainda (essas partes vêm depois, em cima deste endpoint).
+M9.5 (esta entrega): `GET /verify/{batch_number}` — checagem ODRL de
+propósito (header `X-Access-Purpose`) e validação SHACL da FORMA da
+resposta agregada (`VerifierResponseShape`) já incluídas; checagem on-chain
+(AssetRegistry.sol) ainda não (vem depois, em cima deste endpoint).
 """
 from fastapi import FastAPI
 

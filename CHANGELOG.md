@@ -212,3 +212,48 @@ versionado).
 `MS-2026-042` (achado em coop-a + certificação), `MN-2026-007` (achado em
 coop-b, `certification: null`, sem laudo ainda — não é erro),
 `LOTE-INEXISTENTE` (404).
+
+## M9.5 (parte 2) — checagem ODRL de propósito + validação SHACL da resposta agregada — ✅ testado e confirmado
+
+Duas das partes que a entrega anterior deixou explicitamente de fora,
+implementadas em cima do mesmo endpoint `GET /verify/{batch_number}`.
+
+**Checagem ODRL de propósito** (`verifier-demo/verify_endpoint.py`):
+header `X-Access-Purpose` obrigatório, comparado (string local, sem motor
+ODRL) contra o literal `"Compliance EUDR"` — mesmo `odrl:rightOperand` de
+`:Politica_Acesso_EUDR_Silvestre` em `ontology/instances.ttl` (linhas
+~568-594). Ausente → 400; valor errado → 403. Cobre só a metade "purpose"
+da política real, não a metade "assignee" (checagem de identidade do
+requisitante fica pra depois, com autenticação real).
+
+Correção pós-entrega registrada: a primeira versão dessa checagem usava
+`"EUDR_verification"`, valor de uma mensagem avulsa de chat que nunca foi
+commitada no repo — engano do assistente (Claude) ao não conferir a fonte
+versionada antes de implementar. Corrigido no commit `853893c`. Lição
+completa em `docs/known-issues.md`.
+
+**Validação SHACL da resposta agregada**: shape nova
+`VerifierResponseShape` em `ontology/verifier-response-shape.ttl` — arquivo
+SEPARADO de `ontology/validation-shapes.ttl` (o canônico do Ivan valida
+regra de negócio sobre PRODUTO; esta valida a FORMA da resposta que o
+verifier-demo monta, não uma regra legal sobre mel). Exige
+`agritrust:batchNumber` e `productType`; se `certification` estiver
+presente na resposta, exige `legalStatus` e `qualityStatus` dentro dela.
+`verify_endpoint.py` monta um grafo RDF em memória (nunca persistido em
+Fuseki) a partir do resultado da query federada e roda `pyshacl.validate`
+contra essa shape antes de serializar o JSON — `conforms=False` vira `500`
+(erro de sistema: dado incompleto vindo dos outros nós, não erro do
+requisitante).
+
+Pergunta registrada pro Ivan em `docs/perguntas-para-ivan.md` (item 3):
+se separar a shape de resposta da shape de produto faz sentido, ou se
+deveria reusar/estender as shapes de produto.
+
+**Dependências novas** em `verifier-demo/requirements.txt`: `rdflib`,
+`pyshacl` (mesmas libs já usadas em coop-a/coop-b/certifier pro pipeline
+SHACL de entrada).
+
+**Testado por Juan em 2026-09-18**, contra dado real (`MS-2026-042`, não
+só caso sintético): ODRL — `400` (header ausente), `403` (propósito
+errado), `200` (`"Compliance EUDR"`) confirmados; validação SHACL da
+resposta agregada — `200` confirmado com o mesmo lote.

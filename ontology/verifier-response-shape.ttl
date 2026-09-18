@@ -1,0 +1,91 @@
+@prefix : <https://w3id.org/agrisemantics/AGRITRUST/bee-extension#> .
+@prefix agritrust: <https://w3id.org/agrisemantics/AGRITRUST#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+# =============================================================================
+#  VerifierResponseShape — M9.5+ (verifier-demo)
+# =============================================================================
+#
+# NÃO faz parte da ontologia canônica de Ivan Bergier (o resto de ontology/*
+# é cópia de trabalho da fonte publicada — ver CLAUDE.md). Por isso arquivo
+# separado, não uma shape a mais em validation-shapes.ttl.
+#
+# Diferença de propósito em relação a validation-shapes.ttl: aquele arquivo
+# valida REGRA DE NEGÓCIO de domínio (limites de umidade/HMF/acidez etc.)
+# sobre a instância de PRODUTO, já aplicada na ENTRADA de cada nó (M1.5).
+# Esta shape valida a FORMA da resposta AGREGADA que o verifier-demo monta a
+# partir da consulta SPARQL federada (coop-a/coop-b + certifier) — contrato
+# de "quais campos uma resposta de /verify precisa ter", não uma regra legal
+# sobre o mel. Ver docs/perguntas-para-ivan.md para a pergunta em aberto
+# sobre se essa separação faz sentido ou se deveria reusar/estender as
+# shapes de produto.
+#
+# `:hasProductType` / `:hasVerifiedCertification` abaixo são termos NOVOS,
+# que só existem neste grafo agregado em memória (montado em
+# verify_endpoint.py, nunca persistido em nenhum Fuseki) — não são as
+# propriedades de domínio (`agritrust:ownedBy`, `agritrust:legalStatus` etc.)
+# usadas nas instâncias reais dos nós. Prefixo `:` (bee-extension#) reusado
+# só por conveniência de namespace já importado nos outros arquivos; não
+# implica que a classe/propriedades abaixo fazem parte da ontologia
+# canônica.
+#
+# Nó-alvo esperado no grafo agregado:
+#   _:resp a :VerifiedBatchResponse ;
+#          agritrust:batchNumber "..."^^xsd:string ;
+#          :hasProductType "HoneyApis" ;                       # obrigatório
+#          :hasVerifiedCertification _:cert .                  # opcional
+#   _:cert agritrust:legalStatus "..."^^xsd:string ;            # obrigatório SE _:cert existir
+#          agritrust:qualityStatus "..."^^xsd:string .          # obrigatório SE _:cert existir
+
+:VerifiedCertificationShape
+    a sh:NodeShape ;
+    sh:property [
+        sh:path agritrust:legalStatus ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:severity sh:Violation ;
+        sh:message "certification presente na resposta agregada sem agritrust:legalStatus."@pt
+    ] ;
+    sh:property [
+        sh:path agritrust:qualityStatus ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:severity sh:Violation ;
+        sh:message "certification presente na resposta agregada sem agritrust:qualityStatus."@pt
+    ] .
+
+:VerifierResponseShape
+    a sh:NodeShape ;
+    sh:targetClass :VerifiedBatchResponse ;
+    sh:property [
+        sh:path agritrust:batchNumber ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:severity sh:Violation ;
+        sh:message "Resposta agregada do verifier-demo sem agritrust:batchNumber."@pt
+    ] ;
+    sh:property [
+        sh:path :hasProductType ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:severity sh:Violation ;
+        sh:message "Resposta agregada do verifier-demo sem productType."@pt
+    ] ;
+    sh:property [
+        # maxCount 1: no máximo um bloco certification (o formato JSON já
+        # garante isso, checagem redundante só pelo lado do grafo). Quando
+        # presente, precisa satisfazer VerifiedCertificationShape
+        # (legalStatus + qualityStatus) — via sh:node, não sh:qualifiedValueShape,
+        # porque não há cardinalidade mínima aqui: certification ausente
+        # (0 ocorrências) é válido, só quando presente ela precisa estar completa.
+        sh:path :hasVerifiedCertification ;
+        sh:maxCount 1 ;
+        sh:node :VerifiedCertificationShape ;
+        sh:severity sh:Violation ;
+        sh:message "certification da resposta agregada não bate com VerifiedCertificationShape (precisa de legalStatus e qualityStatus)."@pt
+    ] .

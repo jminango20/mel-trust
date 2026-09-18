@@ -10,10 +10,13 @@ coop-b, certifier) SEM nunca copiar/persistir esses dados no verifier-demo.
 Atualização (pós-M9.5): a checagem ODRL de propósito (header
 `X-Access-Purpose`, comparação de string local, sem motor ODRL) foi
 adicionada — ver `_ODRL_POLICY_REFERENCE` e o início de `verify_batch`
-abaixo. Ainda NÃO fazem parte deste escopo (deliberadamente fora daqui —
-vêm depois, em cima deste endpoint):
+abaixo. Também foi adicionada validação SHACL da FORMA da resposta agregada
+(`VerifierResponseShape`, ver `ontology/verifier-response-shape.ttl` e
+`validate_response_shape` abaixo) — roda depois da query federada e antes de
+serializar a resposta; `conforms=False` vira 500 (dado incompleto vindo dos
+outros nós, não erro do requisitante). Ainda NÃO fazem parte deste escopo
+(deliberadamente fora daqui — vêm depois, em cima deste endpoint):
   - checagem de identidade do requisitante (assignee da política ODRL);
-  - validação SHACL da resposta agregada;
   - conferência do hash da credencial no AssetRegistry.sol (M11).
 Não há nenhum stub/esboço dessas partes aqui — só este comentário como
 lembrete de onde elas vão entrar.
@@ -61,13 +64,89 @@ consistente. Efeito colateral aceito: esta consulta depende do Fuseki do
 coop-a estar no ar mesmo para achar um lote que só existe em coop-b (ver
 tratamento de erro 502 abaixo).
 """
+import os
+
 import requests
 from fastapi import APIRouter, Header
 from fastapi.responses import JSONResponse
+from pyshacl import validate
+from rdflib import BNode, Graph, Literal, Namespace, RDF, XSD
 
 from config import COOP_A_SPARQL_URL, COOP_B_SPARQL_SERVICE_URL, CERTIFIER_SPARQL_SERVICE_URL
 
 router = APIRouter()
+
+# =============================================================================
+#   Validação SHACL da resposta agregada — M9.5+
+# =============================================================================
+#
+# `ontology/verifier-response-shape.ttl`: NÃO é o `ontology/validation-shapes.ttl`
+# canônico do Ivan (regra de negócio de domínio sobre PRODUTO). É uma shape
+# nova, mantida em arquivo separado, que valida a FORMA da resposta agregada
+# que este módulo monta (batch + certification) — ver docstring daquele
+# arquivo e docs/perguntas-para-ivan.md.
+_AGT = Namespace("https://w3id.org/agrisemantics/AGRITRUST#")
+_BEE = Namespace("https://w3id.org/agrisemantics/AGRITRUST/bee-extension#")
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_RESPONSE_SHAPES_PATH = os.path.join(
+    _REPO_ROOT, "ontology", "verifier-response-shape.ttl"
+)
+
+
+def _build_response_graph(batch_number: str, result: dict) -> Graph:
+    """Monta o grafo RDF agregado (batch + certification) em memória.
+
+    Nunca é persistido em nenhum Fuseki — existe só pelo tempo desta
+    requisição, para ser validado contra VerifierResponseShape antes de
+    virar JSON. Ver ontology/verifier-response-shape.ttl para o desenho do
+    nó-alvo esperado.
+    """
+    g = Graph()
+    resp = BNode()
+    g.add((resp, RDF.type, _BEE.VerifiedBatchResponse))
+    g.add((resp, _AGT.batchNumber, Literal(batch_number, datatype=XSD.string)))
+
+    product_type = result.get("batch", {}).get("productType")
+    if product_type is not None:
+        g.add((resp, _BEE.hasProductType, Literal(product_type, datatype=XSD.string)))
+
+    certification = result.get("certification")
+    if certification is not None:
+        cert = BNode()
+        g.add((resp, _BEE.hasVerifiedCertification, cert))
+        legal_status = certification.get("legalStatus")
+        quality_status = certification.get("qualityStatus")
+        if legal_status is not None:
+            g.add((cert, _AGT.legalStatus, Literal(legal_status, datatype=XSD.string)))
+        if quality_status is not None:
+            g.add(
+                (cert, _AGT.qualityStatus, Literal(quality_status, datatype=XSD.string))
+            )
+
+    return g
+
+
+def validate_response_shape(batch_number: str, result: dict):
+    """Valida a resposta agregada contra VerifierResponseShape (pyshacl).
+
+    Retorna (conforms, results_text). Não é regra de negócio (já coberta em
+    M1.5, na ENTRADA de cada nó) — é contrato de FORMA: se os dados vindos
+    de coop-a/coop-b/certifier não bastam para montar uma resposta com os
+    campos mínimos esperados, é erro do sistema (dados dos outros nós não
+    batem com o contrato), não do requisitante.
+    """
+    data_graph = _build_response_graph(batch_number, result)
+
+    shapes_graph = Graph()
+    shapes_graph.parse(_RESPONSE_SHAPES_PATH, format="turtle")
+
+    conforms, _results_graph, results_text = validate(
+        data_graph,
+        shacl_graph=shapes_graph,
+        inference="none",
+    )
+    return conforms, results_text
 
 # =============================================================================
 #   Checagem ODRL de propósito (Python local) — M9.5+, sobre o endpoint acima
@@ -287,7 +366,9 @@ def verify_batch(batch_number: str, x_access_purpose: str | None = Header(None))
     cooperativa -> 404. Falha de rede/timeout contra o nó de entrada
     (coop-a) -> 502 (mesmo padrão que M4 de coop-a já usa para "Fuseki
     fora do ar") — sem robustez adicional (retry, timeout diferenciado por
-    sub-consulta SERVICE, etc.), conforme escopo desta entrega.
+    sub-consulta SERVICE, etc.), conforme escopo desta entrega. Antes de
+    serializar a resposta, valida sua FORMA contra `VerifierResponseShape`
+    (ver `validate_response_shape`) -> `conforms=False` vira 500.
 
     Antes de qualquer coisa (inclusive antes de gastar uma consulta SPARQL
     federada cara), checa o header `X-Access-Purpose` contra a política
@@ -374,6 +455,27 @@ def verify_batch(batch_number: str, x_access_purpose: str | None = Header(None))
                     f"Nenhum lote com agritrust:batchNumber = {batch_number!r} "
                     "encontrado em coop-a nem coop-b."
                 ),
+            },
+        )
+
+    # Validação SHACL da FORMA da resposta agregada (VerifierResponseShape,
+    # ver ontology/verifier-response-shape.ttl) — não é a query SPARQL
+    # falhando nem o requisitante errando algo: é o resultado combinado dos
+    # outros nós não batendo com o contrato mínimo esperado (ex.: productType
+    # ausente porque a instância em coop-a/coop-b está incompleta). Por isso
+    # 500, não 400/404.
+    conforms, results_text = validate_response_shape(batch_number, result)
+    if not conforms:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "server_error",
+                "error_description": (
+                    "Resposta agregada não passou na validação SHACL "
+                    "(VerifierResponseShape) — dado incompleto vindo de "
+                    "coop-a/coop-b/certifier."
+                ),
+                "shacl_violations": results_text,
             },
         )
 
