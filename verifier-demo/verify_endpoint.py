@@ -7,9 +7,12 @@ descobrir em qual cooperativa ele foi produzido e se já existe um laudo de
 certificação sobre ele, consultando os TRÊS Fuseki dos outros nós (coop-a,
 coop-b, certifier) SEM nunca copiar/persistir esses dados no verifier-demo.
 
-NÃO faz parte deste escopo (ver instruções da tarefa, deliberadamente fora
-daqui — vem depois, em cima deste endpoint):
-  - checagem ODRL de propósito;
+Atualização (pós-M9.5): a checagem ODRL de propósito (header
+`X-Access-Purpose`, comparação de string local, sem motor ODRL) foi
+adicionada — ver `_ODRL_POLICY_REFERENCE` e o início de `verify_batch`
+abaixo. Ainda NÃO fazem parte deste escopo (deliberadamente fora daqui —
+vêm depois, em cima deste endpoint):
+  - checagem de identidade do requisitante (assignee da política ODRL);
   - validação SHACL da resposta agregada;
   - conferência do hash da credencial no AssetRegistry.sol (M11).
 Não há nenhum stub/esboço dessas partes aqui — só este comentário como
@@ -59,12 +62,70 @@ coop-a estar no ar mesmo para achar um lote que só existe em coop-b (ver
 tratamento de erro 502 abaixo).
 """
 import requests
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 from fastapi.responses import JSONResponse
 
 from config import COOP_A_SPARQL_URL, COOP_B_SPARQL_SERVICE_URL, CERTIFIER_SPARQL_SERVICE_URL
 
 router = APIRouter()
+
+# =============================================================================
+#   Checagem ODRL de propósito (Python local) — M9.5+, sobre o endpoint acima
+# =============================================================================
+#
+# Isto NÃO é um motor ODRL: nenhuma lib processa o JSON-LD abaixo em tempo de
+# execução. `_ODRL_POLICY_REFERENCE` é só DOCUMENTAÇÃO — a representação em
+# JSON-LD da regra de negócio que o `if` em `verify_batch` implementa "na
+# unha" (comparação direta de string). Ela espelha a política ODRL REAL já
+# existente na ontologia canônica (`ontology/instances.ttl`, linhas ~568-594,
+# `:Politica_Acesso_EUDR_Silvestre`): um `odrl:Set` com uma `odrl:permission`
+# de `odrl:action odrl:read`, restrita por um `odrl:constraint` de
+# `odrl:leftOperand odrl:purpose` / `odrl:operator odrl:eq` /
+# `odrl:rightOperand` igual ao propósito exigido.
+#
+# *** CORRECAO POS-ENTREGA - fonte de verdade e o repo, nao mensagem avulsa ***
+# A primeira versao desta checagem usava o literal "EUDR_verification",
+# vindo de uma mensagem avulsa (chat/WhatsApp) do Ivan sobre uma
+# "Policy_001" - texto que NUNCA foi commitado neste repositorio. Isso foi
+# um engano do assistente (Claude) que implementou a checagem sem antes
+# conferir a fonte real e versionada: ontology/instances.ttl, linhas
+# ~568-594, ja define a politica ODRL de verdade para este proposito -
+# :Politica_Acesso_EUDR_Silvestre, com odrl:rightOperand "Compliance
+# EUDR"@en. Corrigido para usar ESSE literal. Licao registrada: dado
+# versionado no repo (.ttl, codigo, CHANGELOG) e sempre a fonte de
+# verdade sobre exemplos soltos de conversa que nao viraram parte dele,
+# mesmo vindo do co-autor da ontologia - se uma mensagem e o repo
+# divergem, checar o repo primeiro, nao assumir que a mensagem esta
+# atualizada.
+_ODRL_POLICY_REFERENCE = """
+{
+  "@context": {
+    "odrl": "http://www.w3.org/ns/odrl/2/"
+  },
+  "@type": "odrl:Set",
+  "@id": "_:Politica_Acesso_Verify_Endpoint",
+  "odrl:permission": [
+    {
+      "@type": "odrl:Permission",
+      "odrl:action": { "@id": "odrl:read" },
+      "odrl:target": { "@id": "_:VerifyEndpointResponse" },
+      "odrl:constraint": [
+        {
+          "@type": "odrl:Constraint",
+          "odrl:leftOperand": { "@id": "odrl:purpose" },
+          "odrl:operator": { "@id": "odrl:eq" },
+          "odrl:rightOperand": "Compliance EUDR"
+        }
+      ]
+    }
+  ]
+}
+"""
+
+# Proposito unico aceito por esta checagem - mesmo literal de
+# :Politica_Acesso_EUDR_Silvestre em ontology/instances.ttl (ver nota de
+# correcao acima).
+_REQUIRED_PURPOSE = "Compliance EUDR"
 
 # Mesmos prefixos/URIs usados em coop-a/coop-b/certifier — ver docstrings
 # daqueles credential_endpoint.py para a fonte (.ttl) de cada termo.
@@ -218,7 +279,7 @@ def query_federated(batch_number: str) -> dict | None:
 
 
 @router.get("/verify/{batch_number}")
-def verify_batch(batch_number: str):
+def verify_batch(batch_number: str, x_access_purpose: str | None = Header(None)):
     """Agrega dado de lote (coop-a OU coop-b) + certificação (certifier).
 
     Uma única query SPARQL federada (ver docstring do módulo) resolve os
@@ -227,7 +288,69 @@ def verify_batch(batch_number: str):
     (coop-a) -> 502 (mesmo padrão que M4 de coop-a já usa para "Fuseki
     fora do ar") — sem robustez adicional (retry, timeout diferenciado por
     sub-consulta SERVICE, etc.), conforme escopo desta entrega.
+
+    Antes de qualquer coisa (inclusive antes de gastar uma consulta SPARQL
+    federada cara), checa o header `X-Access-Purpose` contra a política
+    ODRL de propósito documentada em `_ODRL_POLICY_REFERENCE` acima —
+    checagem "na unha" em Python, não um motor ODRL. Valor exigido:
+    `"Compliance EUDR"`, o mesmo literal de `:Politica_Acesso_EUDR_Silvestre`
+    em `ontology/instances.ttl` (ver nota de correção acima sobre por que
+    não é `"EUDR_verification"`).
+
+    Por que HEADER (`X-Access-Purpose`) e não query string (`?purpose=`):
+      (a) o propósito de acesso é um metadado de COMO a requisição é feita,
+          não do QUE está sendo pedido — o recurso continua sendo
+          `/verify/{batch_number}`; o prefixo `X-` é a convenção usual pra
+          esse tipo de metadado de requisição que não faz parte da
+          identidade do recurso;
+      (b) query params tendem a vazar mais facilmente em logs de proxy,
+          histórico de URL do navegador, etc. — aqui isso não é uma defesa
+          forte de segurança de verdade (não há TLS nem autenticação real
+          ainda), mas é a prática mais cuidadosa mesmo assim;
+      (c) é o mesmo lugar (header) onde viveria um `Authorization: Bearer
+          ...` — o que se conecta ao próximo parágrafo.
+
+    O que esta checagem NÃO faz (e por quê isso é intencional, não um
+    esquecimento): hoje `X-Access-Purpose` é um valor que QUALQUER cliente
+    pode declarar livremente — não há verificação de QUEM está fazendo a
+    requisição, só do propósito que ela AFIRMA ter. Isso cobre apenas a
+    metade "purpose" da política ODRL real (`:Politica_Acesso_EUDR_Silvestre`
+    em `ontology/instances.ttl`), não a metade "assignee": aquela política
+    amarra a permissão a `odrl:assignee :Importador_Alemao_Mel`, uma
+    identidade específica — não "qualquer requisitante que declare o
+    propósito certo". Numa versão futura com autenticação real do
+    requisitante (ex.: apresentação de uma credencial verificável dele
+    mesmo via OID4VP, ou um token OAuth com claims de identidade), o
+    propósito declarado precisaria ser cruzado com uma política que de fato
+    autoriza AQUELE assignee para AQUELE propósito. Essa checagem de
+    identidade/assignee está deliberadamente fora do escopo desta entrega —
+    só é documentada aqui como o próximo passo.
     """
+    if x_access_purpose is None:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_request",
+                "error_description": (
+                    "Header 'X-Access-Purpose' é obrigatório — declare o "
+                    "propósito de acesso a este endpoint (checagem ODRL de "
+                    "propósito, ver docstring de verify_batch)."
+                ),
+            },
+        )
+
+    if x_access_purpose != _REQUIRED_PURPOSE:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "access_denied",
+                "error_description": (
+                    f"Propósito de acesso {x_access_purpose!r} não autorizado "
+                    f"para este endpoint. Propósito aceito: {_REQUIRED_PURPOSE!r}."
+                ),
+            },
+        )
+
     try:
         result = query_federated(batch_number)
     except requests.RequestException as exc:
