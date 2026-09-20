@@ -20,7 +20,8 @@ Uso (rodar com o venv de qualquer nó; precisa de jwcrypto e requests):
         --key fixtures/producer-keys/producer-coop-a.pem
 
 Opcionais: --host (default localhost), --batch-number, --config-id
-(default: primeiro de credential_configurations_supported).
+(default: primeiro de credential_configurations_supported), --demo (resumo
+legível para tela projetada, sem payload bruto/digests nem SD-JWT bruto).
 """
 import argparse
 import base64
@@ -46,6 +47,31 @@ def show(title: str, obj: object) -> None:
     print(json.dumps(obj, indent=2, ensure_ascii=False))
 
 
+# Claims técnicos do SD-JWT que não interessam num resumo de demo.
+_DEMO_HIDDEN_CLAIMS = {"_sd", "_sd_alg", "cnf", "iss", "batchNumber"}
+
+
+def _fmt(value: object) -> str:
+    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+
+
+def print_demo_summary(payload: dict, disclosures: list[str]) -> None:
+    print("\n=== Credencial recebida ===")
+    print(f"Issuer: {payload.get('iss')}")
+    print(f"Lote: {payload.get('batchNumber')}")
+    print("\nClaims sempre visíveis:")
+    for name, value in payload.items():
+        if name not in _DEMO_HIDDEN_CLAIMS:
+            print(f"  {name}: {_fmt(value)}")
+    print("\nClaims revelados nesta apresentação (disclosures):")
+    for d in disclosures:
+        decoded = b64url_json(d)
+        if len(decoded) == 3:  # [salt, nome, valor]
+            print(f"  {decoded[1]}: {_fmt(decoded[2])}")
+        else:  # [salt, valor] — elemento de array
+            print(f"  (item de lista): {_fmt(decoded[1])}")
+
+
 def step_fail(step: str, resp: requests.Response) -> None:
     print(f"\n[ERRO] {step}: HTTP {resp.status_code}\n{resp.text}", file=sys.stderr)
     sys.exit(1)
@@ -68,6 +94,7 @@ def main() -> None:
     ap.add_argument("--host", default="localhost")
     ap.add_argument("--batch-number", default=None)
     ap.add_argument("--config-id", default=None)
+    ap.add_argument("--demo", action="store_true", help="saída resumida e legível (sem payload bruto)")
     args = ap.parse_args()
 
     base = f"http://{args.host}:{args.port}"
@@ -122,8 +149,14 @@ def main() -> None:
     parts = sdjwt.split("~")
     issuer_jwt, disclosures = parts[0], [p for p in parts[1:] if p]
     h, p, _sig = issuer_jwt.split(".")
+    payload = b64url_json(p)
+
+    if args.demo:
+        print_demo_summary(payload, disclosures)
+        return
+
     show("SD-JWT header", b64url_json(h))
-    show("SD-JWT payload (claims em claro + _sd digests)", b64url_json(p))
+    show("SD-JWT payload (claims em claro + _sd digests)", payload)
     print(f"\n=== Disclosures ({len(disclosures)}) — [salt, claim, valor] ===")
     for d in disclosures:
         print(json.dumps(b64url_json(d), ensure_ascii=False))
