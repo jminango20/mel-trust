@@ -42,10 +42,14 @@
 :Apiario_CerradoVivo_Geo_CoopA
     a geo:Feature ;
     rdfs:label "Localização (fictícia/teste) do Apiário Cerrado Vivo — coop-a"@pt ;
-    geo:hasGeometry [
-        a geo:Point ;
-        geo:asWKT "POINT(-47.9 -15.7)"^^geo:wktLiteral
-    ] .
+    geo:hasGeometry :Apiario_CerradoVivo_Point_CoopA .
+
+# Ponto com URI FIXA (não blank node): reinserir este arquivo é idempotente.
+# Com blank node, cada execução do pipeline.py criava um geo:Point novo
+# (bnode ganha id diferente a cada parse) e duplicava a geometria no Fuseki.
+:Apiario_CerradoVivo_Point_CoopA
+    a geo:Point ;
+    geo:asWKT "POINT(-47.9 -15.7)"^^geo:wktLiteral .
 
 :Apicultor_Joao_Cerrado
     a agritrust:DataProducer ;
@@ -69,8 +73,3 @@
     agritrust:legalStatus "Aprovado para Comercialização"@pt ;
     :destinationCategory "Consumo Direto"@pt ;
     rdfs:label "Lote de Mel Silvestre - Aroeira - Safra 2026/04"@pt .
-
-
-cd C:\CPqD\mel-trust\coop-a
-.\venv\Scripts\Activate.ps1
-python ..\scripts\test_credential_flow.py --port 8001 --producer-key ..\keys\coop-a.pem

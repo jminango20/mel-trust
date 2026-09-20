@@ -68,10 +68,13 @@
 :Meliponario_Jatai_Cerrado_Geo
     a geo:Feature ;
     rdfs:label "Localização (fictícia/teste) do Meliponário Jataí do Cerrado — coop-b"@pt ;
-    geo:hasGeometry [
-        a geo:Point ;
-        geo:asWKT "POINT(-48.15 -15.83)"^^geo:wktLiteral
-    ] .
+    geo:hasGeometry :Meliponario_Jatai_Cerrado_Point .
+
+# Ponto com URI FIXA (não blank node): reinserir este arquivo é idempotente
+# (ver nota equivalente em coop-a/data/sample-instance.ttl).
+:Meliponario_Jatai_Cerrado_Point
+    a geo:Point ;
+    geo:asWKT "POINT(-48.15 -15.83)"^^geo:wktLiteral .
 
 :Apicultor_Joao_Cerrado
     a agritrust:DataProducer ;
