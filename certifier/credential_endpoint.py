@@ -33,12 +33,11 @@ para SPARQL real: `legalStatus` (sempre visível), `qualityStatus`,
 sample-lab-result-valid.ttl (agritrust:legalStatus, agritrust:qualityStatus,
 :hasFloralOrigin, :hasMoistureContent, :hasHMFContent, :hasAcidity,
 :hasDiastaseActivity) e são lidos via agritrust:batchNumber do lote
-referenciado pelo laudo. CONTINUAM HARDCODED (sem correspondência no grafo
-do certifier, ver justificativa por campo abaixo, na montagem dos claims):
+referenciado pelo laudo. AUSENTES da credencial (sem correspondência no grafo do certifier):
 `certificateType`, `certificateNumber`, o objeto `analysisActivity`
-(startedAtTime/endedAtTime/executedBy) e `certificateReference`. Não
-inventamos propriedades RDF novas para representá-los — isso seria além do
-escopo desta migração e criaria dado fictício disfarçado de dado real.
+(startedAtTime/endedAtTime/executedBy) e `certificateReference`. Removidos
+do MVP atual por falta de modelagem PROV-O; migração em M5.5. Ver
+docs/notas-arquitetura/certifier-claims-hardcoded-m4.md.
 """
 import time
 
@@ -342,14 +341,9 @@ async def credential_endpoint(request: Request):
 
     # --- Disclosable (cada SDObj vira uma Disclosure própria) ---
 
-    # Identificação do certificado em si: SEM correspondência no grafo do
-    # certifier (sample-lab-result-valid.ttl não modela um recurso "laudo"
-    # com número/tipo próprios — só as medições sobre o lote). SCHEMA
-    # MISMATCH: continua HARDCODED, idêntico a M3 — não inventamos
-    # agritrust:certificateType/certificateNumber como triplas nesta
-    # migração.
-    user_claims[SDObj("certificateType")] = "Análise Físico-Química"
-    user_claims[SDObj("certificateNumber")] = "LAUDO-2026-0442"
+    # SEM `certificateType`/`certificateNumber`: não há dado real no grafo
+    # do certifier (o laudo só modela as medições sobre o lote). Ausentes
+    # até M5.5 — ver docs/notas-arquitetura/certifier-claims-hardcoded-m4.md.
 
     # Parâmetros físico-químicos: M4 REAL — cada um só entra se a query
     # retornou valor (blocos OPTIONAL da query), mesma cautela de coop-a
@@ -375,26 +369,10 @@ async def credential_endpoint(request: Request):
     if row["qualityStatus"] is not None:
         user_claims[SDObj("qualityStatus")] = row["qualityStatus"]
 
-    # Atividade de análise laboratorial: objeto único (SDObj). SEM
-    # correspondência no grafo do certifier — sample-lab-result-valid.ttl
-    # não tem prov:startedAtTime/endedAtTime/agritrust:executedBy para o
-    # laudo (só ontology/instances.ttl tem um evento PROV-O análogo para
-    # COLHEITA, não para análise laboratorial — ver docstring original de
-    # M3). SCHEMA MISMATCH: continua HARDCODED, idêntico a M3.
-    user_claims[SDObj("analysisActivity")] = {
-        "startedAtTime": "2026-04-16T08:00:00Z",
-        "endedAtTime": "2026-04-16T16:30:00Z",
-        "executedBy": "did:web:laboratorio-ficticio.example",
-    }
-
-    # Referência da PRÓPRIA credencial de certificação: SEM correspondência
-    # no grafo (é um identificador da CREDENCIAL, não do dado de domínio
-    # subjacente — nasce no momento da emissão, não é algo que o laudo em si
-    # "contém"). SCHEMA MISMATCH: continua HARDCODED, idêntico a M3. Este é
-    # o mesmo identificador que a credencial de LOTE do coop-a referencia
-    # como `certificateReference` (ver coop-a/credential_endpoint.py) —
-    # fecha o vínculo cruzado entre as duas credenciais.
-    user_claims[SDObj("certificateReference")] = "urn:agritrust:certifier:cert:CERT-2026-042"
+    # SEM `analysisActivity` nem `certificateReference`: sem modelagem
+    # PROV-O da atividade de análise / sem certificado real gravado no
+    # Fuseki, ficam ausentes até M5.5 (mesma decisão aplicada ao
+    # `certificateReference` do coop-a).
 
     # --- 5. Monta e assina o SD-JWT ---
     issuer_key = get_issuer_key()

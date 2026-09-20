@@ -30,7 +30,7 @@
     a agritrust:DataProducer ;
     rdfs:label "João da Silva"@pt ;
     foaf:name "João da Silva" ;
-    agritrust:hasDID "did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSwuBV8xRoAnwWsdvktH" ;
+    agritrust:hasDID "did:key:z6MkhssBusXfHjvnvquNJjwQaVYTGsvgY9otdhLhKyCaXJT9" ;
     :hasSupplierCadaster "SIE-DF-0123 - Apiário Cerrado Vivo (50 colmeias Apis, 10 colmeias Jataí)" .
 
 # Resultado do laboratório contratado pela certificadora (did:web:certifier.example)

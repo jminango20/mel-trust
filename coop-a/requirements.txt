@@ -17,3 +17,10 @@ sd-jwt
 # Usado só para decodificar (sem verificar assinatura — ver credential_endpoint.py)
 # o JWT de key proof enviado pelo holder no corpo de POST /credential.
 pyjwt
+
+# M5: usado por scripts/generate_did_key.py (raiz do repo) para codificar o
+# did:key dos produtores em multibase base58btc. Não é usado por nenhum
+# código de runtime deste nó — o script é rodado manualmente, uma vez por
+# produtor, com o venv do coop-a (qualquer um dos 3 venvs serviria, já que
+# todos têm jwcrypto via sd-jwt; escolhido coop-a por convenção).
+base58

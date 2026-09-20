@@ -16,11 +16,17 @@ credential_endpoint.py. Emite o SD-JWT VC `HoneyBatchCredential` declarado
 no metadata abaixo, com dados de lote FIXOS/hardcoded (M4 pluga Fuseki
 depois). Ainda sem SHACL neste fluxo ou ancoragem — isso vem em milestones
 futuros (M4+).
+
+Escopo M5: DID Document (GET /.well-known/did.json) — ver did_endpoint.py.
+Resolução real de did:web (o `credential_issuer`/`iss` abaixo deixa de ser
+só um identificador opaco e passa a apontar para um documento de fato
+resolvível, com a chave pública que assina as credenciais deste nó).
 """
 from fastapi import FastAPI
 
 from config import BASE_URL, DID_WEB, NODE_NAME
 from credential_endpoint import router as credential_router
+from did_endpoint import router as did_router
 from nonce_endpoint import router as nonce_router
 from token_endpoint import router as token_router
 
@@ -28,6 +34,7 @@ app = FastAPI(title=f"AgriTrust Mel — {NODE_NAME}")
 app.include_router(token_router)
 app.include_router(nonce_router)
 app.include_router(credential_router)
+app.include_router(did_router)
 
 
 @app.get("/.well-known/openid-credential-issuer")

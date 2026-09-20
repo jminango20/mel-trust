@@ -18,10 +18,10 @@ NODE_NAME = os.environ.get("NODE_NAME", "coop-b")
 # usado para resolver o did:web (ver DID_WEB abaixo). Em dev, localhost.
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8002")
 
-# DID do coop-b. PLACEHOLDER — a resolução real de did:web (documento DID
-# publicado em /.well-known/did.json, chaves, etc.) é escopo do M5.
-# Por ora só serve para preencher o campo "issuer" do metadata OID4VCI.
-DID_WEB = os.environ.get("DID_WEB", "did:web:coop-b.example")
+# DID real do coop-b (M5). Mesma convenção de coop-a/config.py: porta
+# percent-encoded (`%3A`) como segmento do did:web, resolve para
+# GET {BASE_URL}/.well-known/did.json (ver main.py).
+DID_WEB = os.environ.get("DID_WEB", "did:web:localhost%3A8002")
 
 # --- M2: token endpoint (pre-authorized_code flow) ---
 

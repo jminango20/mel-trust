@@ -516,21 +516,10 @@ async def credential_endpoint(request: Request):
     if row["producerDID"] is not None:
         user_claims[SDObj("producerDID")] = row["producerDID"]
 
-    # Referência ao certificado emitido pelo certifier (certifier — ainda
-    # não existe de fato; valor placeholder plausível). Disclosable
-    # porque nem toda apresentação da credencial de lote precisa expor o
-    # vínculo com o processo de certificação específico (isso é mais
-    # relevante para auditoria de cadeia de custódia / PROV-O do que
-    # para uma verificação simples de "este lote é de mel de Apis").
-    #
-    # M4 NÃO resolve isso via SPARQL: não há correspondente real no grafo
-    # do coop-a para "referência de certificado" — esse dado nasce do lado
-    # do certifier (outro nó, fora do dataset "coop-a" do Fuseki), que
-    # ainda não existe neste repo. Mantido como o MESMO placeholder
-    # hardcoded que M3 já tinha, deliberadamente, até o nó certifier
-    # existir e este claim poder vir de uma fonte real (provavelmente via
-    # SPARQL federado, não deste dataset local).
-    user_claims[SDObj("certificateReference")] = "urn:agritrust:certifier:cert:CERT-2026-042"
+    # SEM `certificateReference`: não existe certificado real emitido para
+    # este lote (nem no dataset do coop-a, nem no certifier). Claim fica
+    # ausente do payload até existir um certificado real a referenciar
+    # (provavelmente via SPARQL federado) — mesma decisão do coop-b.
 
     # --- 5. Monta e assina o SD-JWT ---
     issuer_key = get_issuer_key()

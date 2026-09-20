@@ -22,11 +22,15 @@ certifier não tinha nenhuma lógica de emissão real por trás para expor essa
 inconsistência. Corrigido para `HoneyCertificationCredential` (vct
 `.../honey-certification`), que é o tipo que credential_endpoint.py
 realmente implementa e valida via `CREDENTIAL_CONFIGURATION_ID`.
+
+Escopo M5: DID Document (GET /.well-known/did.json) — ver did_endpoint.py.
+Mesmo mecanismo de coop-a/coop-b.
 """
 from fastapi import FastAPI
 
 from config import BASE_URL, DID_WEB, NODE_NAME
 from credential_endpoint import router as credential_router
+from did_endpoint import router as did_router
 from nonce_endpoint import router as nonce_router
 from token_endpoint import router as token_router
 
@@ -34,6 +38,7 @@ app = FastAPI(title=f"AgriTrust Mel — {NODE_NAME}")
 app.include_router(token_router)
 app.include_router(nonce_router)
 app.include_router(credential_router)
+app.include_router(did_router)
 
 
 @app.get("/.well-known/openid-credential-issuer")

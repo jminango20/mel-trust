@@ -34,8 +34,13 @@
 # Duas mudanças em relação à instância original de referência (coop-a):
 #   1. DIDs trocados pelos placeholders reais deste MVP: did:web:coop-b.example
 #      para a cooperativa (mesmo DID_WEB usado em coop-b/config.py) e um
-#      did:key de exemplo (formato Ed25519 multibase, não é uma chave real —
-#      geração de chave de verdade é escopo do M5) para o produtor individual.
+#      did:key REAL (Ed25519, multibase base58btc) para o produtor
+#      individual, gerado em M5 (scripts/generate_did_key.py) a partir de um
+#      par de chaves de verdade — chave privada em
+#      fixtures/producer-keys/producer-coop-b.pem (gitignored, nunca
+#      versionada). Ainda sem registro/rotação formal do produtor em lugar
+#      nenhum (isso é M5.5, futuro) — o did:key é auto-resolúvel (decodifica
+#      o próprio identificador), não precisa de registro para ser válido.
 #   2. Sem a parte de assinatura/VC (vc:VerifiableCredential, hasProof,
 #      Ed25519Signature2020 etc.) — isso é dado de domínio (o lote em si),
 #      não a credencial verificável que será emitida sobre ele em milestone
@@ -72,7 +77,7 @@
     a agritrust:DataProducer ;
     rdfs:label "João da Silva"@pt ;
     foaf:name "João da Silva" ;
-    agritrust:hasDID "did:key:z6MkuQ5t9ijNZzxUMWebnh9NF2fBcNiUpmKgJhaWv3fZ7SFA" ;
+    agritrust:hasDID "did:key:z6Mkkc7de5XEc1sUGBYxHo8yLWM9yTsnorqCNK7HnE8SZnVT" ;
     :hasSupplierCadaster "SIE-DF-0123 - Meliponário Jataí do Cerrado (12 colmeias de Tetragonisca angustula)" ;
     agritrust:hasOperatingLocation :Meliponario_Jatai_Cerrado_Geo .
 

@@ -30,7 +30,7 @@
     a agritrust:DataProducer ;
     rdfs:label "João da Silva"@pt ;
     foaf:name "João da Silva" ;
-    agritrust:hasDID "did:key:z6MkuQ5t9ijNZzxUMWebnh9NF2fBcNiUpmKgJhaWv3fZ7SFA" ;
+    agritrust:hasDID "did:key:z6Mkkc7de5XEc1sUGBYxHo8yLWM9yTsnorqCNK7HnE8SZnVT" ;
     :hasSupplierCadaster "SIE-DF-0123 - Meliponário Jataí do Cerrado (12 colmeias de Tetragonisca angustula)" .
 
 :Meliponario_Jatai_Cerrado
