@@ -124,6 +124,13 @@ PREFIX geo: <http://www.opengis.net/ont/geosparql#>
 #   em retornar zero linhas. (hasDiastaseActivity não é buscado aqui: não é
 #   um claim que M3 definiu para a credencial de lote — buscar um campo que
 #   nunca vira claim seria código morto.)
+# - ?floralOrigin: origem floral é dado DECLARADO PELO PRODUTOR na colheita
+#   (:hasFloralOrigin no próprio recurso do lote, não no laudo do
+#   certifier) — no caso de uso canônico do Ivan, o apicultor relata a
+#   origem floral por voz durante a colheita; o laboratório nunca confirma
+#   isso. Por isso mora aqui (coop-a), não no certifier. OPTIONAL pela
+#   mesma razão dos três campos acima: nem todo lote tem a origem
+#   declarada.
 # - ?producer: obrigatório (não OPTIONAL) via agritrust:ownedBy, porque um
 #   lote sem produtor dono seria um dado de domínio incompleto — se isso
 #   acontecer, preferimos que a query não devolva parte dos claims de forma
@@ -143,7 +150,7 @@ PREFIX geo: <http://www.opengis.net/ont/geosparql#>
 #   existir. Um produtor sem localização cadastrada não deve gerar linhas
 #   "meio nulas" a mais na tabela de resultado.
 _CLAIMS_QUERY_TEMPLATE = _SPARQL_PREFIXES + """
-SELECT ?productType ?moisture ?hmf ?acidity
+SELECT ?productType ?moisture ?hmf ?acidity ?floralOrigin
        ?producerLabel ?producerFoafName ?producerDID ?geoWKT ?geoLabel
 WHERE {
   ?batch agritrust:batchNumber %(batch_number)s ;
@@ -152,6 +159,7 @@ WHERE {
   OPTIONAL { ?batch :hasMoistureContent ?moisture }
   OPTIONAL { ?batch :hasHMFContent ?hmf }
   OPTIONAL { ?batch :hasAcidity ?acidity }
+  OPTIONAL { ?batch :hasFloralOrigin ?floralOrigin }
   OPTIONAL { ?producer rdfs:label ?producerLabel }
   OPTIONAL { ?producer foaf:name ?producerFoafName }
   OPTIONAL { ?producer agritrust:hasDID ?producerDID }
@@ -232,6 +240,7 @@ def query_batch_claims(batch_number: str) -> dict | None:
         "moisture": _val("moisture"),
         "hmf": _val("hmf"),
         "acidity": _val("acidity"),
+        "floralOrigin": _val("floralOrigin"),
         "producerLabel": _val("producerLabel"),
         "producerFoafName": _val("producerFoafName"),
         "producerDID": _val("producerDID"),
@@ -501,6 +510,13 @@ async def credential_endpoint(request: Request):
         user_claims[SDObj("hmfContent")] = row["hmf"]
     if row["acidity"] is not None:
         user_claims[SDObj("acidityContent")] = row["acidity"]
+
+    # Origem floral: dado DECLARADO PELO PRODUTOR (:hasFloralOrigin no
+    # recurso do lote), não confirmado por laboratório — ver justificativa
+    # na query acima. Disclosable pela mesma razão dos outros campos de
+    # laudo: nem toda apresentação precisa revelar a origem floral.
+    if row["floralOrigin"] is not None:
+        user_claims[SDObj("floralOrigin")] = row["floralOrigin"]
 
     # Identidade do produtor: NOME e DID como disclosures SEPARADAS, não
     # agrupadas em um objeto "producer" único. Justificativa: são usos

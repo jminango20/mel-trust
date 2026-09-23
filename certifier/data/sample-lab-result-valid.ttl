@@ -38,7 +38,6 @@
 :Lote_Mel_Silvestre_2026_042
     a :HoneyApis ;
     agritrust:ownedBy :Apicultor_Joao_Cerrado ;
-    :hasFloralOrigin "Aroeira (Myracrodruon urundeuva)"@pt ;
     :hasMoistureContent "18.0"^^xsd:decimal ;
     :hasHMFContent "30.0"^^xsd:decimal ;
     :hasAcidity "28.5"^^xsd:decimal ;

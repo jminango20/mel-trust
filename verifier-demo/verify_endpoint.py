@@ -239,17 +239,24 @@ PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 # existir ainda, independente de onde o lote foi encontrado.
 # `agritrust:legalStatus` dentro do SERVICE não é OPTIONAL (é o claim
 # "sempre visível" da credencial de certificação, mesmo critério do M4 do
-# certifier); `qualityStatus`/`floralOrigin` são OPTIONAL — mesma
-# simplificação de campos documentada abaixo, mesmo raciocínio de "auditor
-# de primeira camada" já usado no M4 do certifier.
+# certifier); `qualityStatus` é OPTIONAL — mesma simplificação de campos
+# documentada abaixo, mesmo raciocínio de "auditor de primeira camada" já
+# usado no M4 do certifier.
+#
+# `floralOrigin` NÃO é buscado aqui dentro do SERVICE do certifier: mudou
+# de dono para o produtor (mesma decisão de coop-a/credential_endpoint.py —
+# é dado declarado na colheita, o laboratório nunca confirma isso), então
+# migrou para dentro de CADA ramo do UNION abaixo (`:hasFloralOrigin` do
+# recurso do LOTE, não do laudo).
 _FEDERATED_QUERY_TEMPLATE = _SPARQL_PREFIXES + """
 SELECT ?sourceNode ?productType ?producerLabel ?producerFoafName ?producerDID
-       ?legalStatus ?qualityStatus ?floralOrigin
+       ?floralOrigin ?legalStatus ?qualityStatus
 WHERE {
   {
     ?batch agritrust:batchNumber %(batch_number)s ;
            a ?productType ;
            agritrust:ownedBy ?producer .
+    OPTIONAL { ?batch :hasFloralOrigin ?floralOrigin }
     OPTIONAL { ?producer rdfs:label ?producerLabel }
     OPTIONAL { ?producer foaf:name ?producerFoafName }
     OPTIONAL { ?producer agritrust:hasDID ?producerDID }
@@ -261,6 +268,7 @@ WHERE {
       ?batch agritrust:batchNumber %(batch_number)s ;
              a ?productType ;
              agritrust:ownedBy ?producer .
+      OPTIONAL { ?batch :hasFloralOrigin ?floralOrigin }
       OPTIONAL { ?producer rdfs:label ?producerLabel }
       OPTIONAL { ?producer foaf:name ?producerFoafName }
       OPTIONAL { ?producer agritrust:hasDID ?producerDID }
@@ -273,7 +281,6 @@ WHERE {
                  agritrust:legalStatus ?legalStatus ;
                  a ?anyType .
       OPTIONAL { ?labResult agritrust:qualityStatus ?qualityStatus }
-      OPTIONAL { ?labResult :hasFloralOrigin ?floralOrigin }
     }
   }
 }
@@ -335,7 +342,6 @@ def query_federated(batch_number: str) -> dict | None:
         {
             "legalStatus": legal_status,
             "qualityStatus": _val(row, "qualityStatus"),
-            "floralOrigin": _val(row, "floralOrigin"),
         }
         if legal_status is not None
         else None
@@ -347,6 +353,11 @@ def query_federated(batch_number: str) -> dict | None:
             "productType": product_type,
             "producerName": producer_name,
             "producerDID": _val(row, "producerDID"),
+            # floralOrigin mudou de "certification" para "batch": é dado
+            # declarado pelo produtor na colheita (:hasFloralOrigin do
+            # lote, em coop-a/coop-b), não confirmado pelo laboratório —
+            # ver docstring da query acima.
+            "floralOrigin": _val(row, "floralOrigin"),
         },
         # None explícito (não campo ausente) quando não há laudo ainda —
         # distinção deliberada entre "não certificado" e "erro". Usamos

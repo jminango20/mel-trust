@@ -28,12 +28,19 @@ correspondência real em certifier/data/sample-lab-result-valid.ttl.
 SCHEMA MISMATCH (documentado explicitamente, não escondido): nem todo claim
 que M3 hardcoded tem uma tripla correspondente no grafo do laudo. Migraram
 para SPARQL real: `legalStatus` (sempre visível), `qualityStatus`,
-`floralOrigin`, `moistureContent`, `hmfContent`, `acidityContent`,
-`diastaseActivity` (disclosable) — todos existem como triplas em
+`moistureContent`, `hmfContent`, `acidityContent`, `diastaseActivity`
+(disclosable) — todos existem como triplas em
 sample-lab-result-valid.ttl (agritrust:legalStatus, agritrust:qualityStatus,
-:hasFloralOrigin, :hasMoistureContent, :hasHMFContent, :hasAcidity,
-:hasDiastaseActivity) e são lidos via agritrust:batchNumber do lote
-referenciado pelo laudo. AUSENTES da credencial (sem correspondência no grafo do certifier):
+:hasMoistureContent, :hasHMFContent, :hasAcidity, :hasDiastaseActivity) e
+são lidos via agritrust:batchNumber do lote referenciado pelo laudo.
+
+`floralOrigin` MUDOU DE DONO (pós-M4): não é mais emitido pelo certifier.
+No caso de uso canônico do Ivan, é o PRODUTOR quem declara a origem floral
+por voz na colheita — o laboratório nunca confirma isso. Passou a ser
+claim de coop-a/coop-b (`:hasFloralOrigin` no recurso do LOTE, não no
+laudo) — ver coop-a/credential_endpoint.py.
+
+AUSENTES da credencial (sem correspondência no grafo do certifier):
 `certificateType`, `certificateNumber`, o objeto `analysisActivity`
 (startedAtTime/endedAtTime/executedBy) e `certificateReference`. Removidos
 do MVP atual por falta de modelagem PROV-O; migração em M5.5. Ver
@@ -116,22 +123,23 @@ PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 #   tiver esse campo preenchido, é dado de domínio incompleto e preferimos
 #   que a query não devolva parte dos claims silenciosamente (mesma postura
 #   de coop-a com agritrust:ownedBy).
-# - ?qualityStatus / ?floralOrigin / ?moisture / ?hmf / ?acidity / ?diastase:
-#   cada um em seu próprio OPTIONAL — nem todo laudo necessariamente
-#   preenche todos os parâmetros físico-químicos (ex.: um laudo simplificado
-#   sem diástase). `diastaseActivity` ESTÁ presente aqui (diferente de
-#   coop-a/coop-b): o laudo do certifier de fato mede esse parâmetro
-#   (:hasDiastaseActivity existe em sample-lab-result-valid.ttl), e M3 já
-#   definiu `diastaseActivity` como claim real desta credencial.
+# - ?qualityStatus / ?moisture / ?hmf / ?acidity / ?diastase: cada um em seu
+#   próprio OPTIONAL — nem todo laudo necessariamente preenche todos os
+#   parâmetros físico-químicos (ex.: um laudo simplificado sem diástase).
+#   `diastaseActivity` ESTÁ presente aqui (diferente de coop-a/coop-b): o
+#   laudo do certifier de fato mede esse parâmetro (:hasDiastaseActivity
+#   existe em sample-lab-result-valid.ttl), e M3 já definiu
+#   `diastaseActivity` como claim real desta credencial. (`floralOrigin` NÃO
+#   é buscado aqui: mudou de dono para coop-a/coop-b — ver docstring do
+#   módulo.)
 _CLAIMS_QUERY_TEMPLATE = _SPARQL_PREFIXES + """
-SELECT ?legalStatus ?qualityStatus ?floralOrigin
+SELECT ?legalStatus ?qualityStatus
        ?moisture ?hmf ?acidity ?diastase
 WHERE {
   ?labResult agritrust:batchNumber %(batch_number)s ;
              agritrust:legalStatus ?legalStatus ;
              a ?anyType .
   OPTIONAL { ?labResult agritrust:qualityStatus ?qualityStatus }
-  OPTIONAL { ?labResult :hasFloralOrigin ?floralOrigin }
   OPTIONAL { ?labResult :hasMoistureContent ?moisture }
   OPTIONAL { ?labResult :hasHMFContent ?hmf }
   OPTIONAL { ?labResult :hasAcidity ?acidity }
@@ -182,7 +190,6 @@ def query_certification_claims(batch_number: str) -> dict | None:
     return {
         "legalStatus": _val("legalStatus"),
         "qualityStatus": _val("qualityStatus"),
-        "floralOrigin": _val("floralOrigin"),
         "moisture": _val("moisture"),
         "hmf": _val("hmf"),
         "acidity": _val("acidity"),
@@ -359,9 +366,9 @@ async def credential_endpoint(request: Request):
     if row["diastase"] is not None:
         user_claims[SDObj("diastaseActivity")] = row["diastase"]
 
-    # Origem floral: M4 REAL — de :hasFloralOrigin no laudo.
-    if row["floralOrigin"] is not None:
-        user_claims[SDObj("floralOrigin")] = row["floralOrigin"]
+    # SEM `floralOrigin`: mudou de dono para coop-a/coop-b (dado declarado
+    # pelo produtor na colheita, não confirmado pelo laboratório) — ver
+    # docstring do módulo.
 
     # Status de qualidade: M4 REAL — de agritrust:qualityStatus no laudo.
     # Disclosable, ao contrário de `legalStatus` (sempre visível) — mesma
