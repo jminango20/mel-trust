@@ -60,6 +60,46 @@
         sh:message "Atividade diastásica abaixo de 8 Gothe (IN 11/2000)"@pt
     ] .
 
+# [SHACL] Cardinalidade mínima de identificação/procedência para Mel de Apis
+# — adicionada pelo MVP, com autorização do Ivan Bergier ("a ontologia é
+# aberta e adaptável, artefatos semânticos novos podem ser adicionados",
+# ver docs/respostas-ivan.md, pergunta 5). Antes desta shape, nenhuma regra
+# do arquivo exigia batchNumber/ownedBy — descoberto ao construir POST /lote
+# (coop-a/lote_endpoint.py), ver docs/known-issues.md ("POST /lote: gate
+# SHACL, na prática, sempre passa").
+:HoneyApisIdentificationShape a sh:NodeShape ;
+    sh:targetClass :HoneyApis ;
+    sh:property [
+        sh:path agritrust:batchNumber ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Lote precisa ter número de identificação"@pt
+    ] ;
+    sh:property [
+        sh:path agritrust:ownedBy ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Lote precisa ter produtor associado"@pt
+    ] .
+
+# [SHACL] Formato de geo:asWKT — adicionada pelo MVP, com autorização do
+# Ivan Bergier ("a ontologia é aberta e adaptável, artefatos semânticos
+# novos podem ser adicionados", ver docs/respostas-ivan.md, pergunta 5).
+# Exige o formato "POINT(lon lat)" (convenção já usada em todo o projeto —
+# ver coop-a/data/sample-instance.ttl, ontology/instances.ttl): a palavra
+# POINT, dois números (sinal e parte decimal opcionais) separados por
+# espaço, entre parênteses. sh:pattern (não sh:datatype): o valor já é
+# tipado como geo:wktLiteral no dado real; o que faltava validar era o
+# FORMATO da string WKT em si, que sh:datatype não cobre.
+:GeoPointWKTShape a sh:NodeShape ;
+    sh:targetClass geo:Point ;
+    sh:property [
+        sh:path geo:asWKT ;
+        sh:pattern "^POINT\\s*\\(\\s*-?\\d+(\\.\\d+)?\\s+-?\\d+(\\.\\d+)?\\s*\\)$" ;
+        sh:severity sh:Violation ;
+        sh:message "geo:asWKT deve seguir o formato POINT(lon lat)"@pt
+    ] .
+
 # [SHACL] Aviso para Umidade em Mel Nativo (Portaria 1.439/2025)
 :HoneyNativeMoistureShape a sh:NodeShape ;
     sh:targetClass :HoneyNativeStinglessBee ;

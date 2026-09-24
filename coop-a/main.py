@@ -21,12 +21,19 @@ Escopo M5: DID Document (GET /.well-known/did.json) — ver did_endpoint.py.
 Resolução real de did:web (o `credential_issuer`/`iss` abaixo deixa de ser
 só um identificador opaco e passa a apontar para um documento de fato
 resolvível, com a chave pública que assina as credenciais deste nó).
+
+Ajuste pós-narrativa: POST /lote (ver lote_endpoint.py). Cadastra um lote via
+HTTP com o mesmo gate SHACL de pipeline.py (M1.5), sem precisar editar
+data/sample-instance.ttl à mão nem rodar o script via terminal. Não substitui
+pipeline.py — é uma segunda porta de entrada para o mesmo gate
+(shacl_pipeline.py).
 """
 from fastapi import FastAPI
 
 from config import BASE_URL, DID_WEB, NODE_NAME
 from credential_endpoint import router as credential_router
 from did_endpoint import router as did_router
+from lote_endpoint import router as lote_router
 from nonce_endpoint import router as nonce_router
 from token_endpoint import router as token_router
 
@@ -35,6 +42,7 @@ app.include_router(token_router)
 app.include_router(nonce_router)
 app.include_router(credential_router)
 app.include_router(did_router)
+app.include_router(lote_router)
 
 
 @app.get("/.well-known/openid-credential-issuer")
