@@ -22,11 +22,21 @@ ainda não confirmado, está marcado como tal, não como concluído.
 
 Todos testados e confirmados por Juan (datas em `CHANGELOG.md`).
 
+**Ajuste pós-demo, testado**: `floralOrigin` é campo do PRODUTOR (claim
+disclosable de `batch`, em coop-a/coop-b — `:hasFloralOrigin` no recurso do
+lote), não mais do certificador. Motivo: na narrativa canônica do Ivan, é o
+produtor quem declara a origem floral na colheita; o laboratório nunca
+confirma isso. Os campos físico-químicos (umidade, HMF, acidez, diástase)
+continuam no certifier, sem mudança — são sempre medição de laboratório. A
+query federada do verifier-demo (`/verify`) já reflete essa mudança: o campo
+sai de `certification` e passa a vir dentro de `batch`.
+
 **Pendências conhecidas dentro de M1-M4** (não bloqueiam milestones
 seguintes, registradas em `docs/known-issues.md`): escape SPARQL simples
-(não hardening completo), `certifier` com 4 claims ainda hardcoded
-(`certificateType`, `certificateNumber`, `analysisActivity`,
-`certificateReference` — aguardando extensão PROV-O em M5.5).
+(não hardening completo); `certifier` sem 4 claims (`certificateType`,
+`certificateNumber`, `analysisActivity`, `certificateReference` — removidos
+no M5 por falta de dado real, voltam com a extensão PROV-O em M5.5);
+`pre-authorized_code` fixo por nó; `pipeline.py` como script CLI.
 
 ## verifier-demo — M9.5: 3 dos 4 passos do fluxo implementados
 
@@ -44,8 +54,21 @@ Passos 2 e 3 testados manualmente por Juan em 2026-09-18 contra dado real
 `403` (propósito errado), `200` (`"Compliance EUDR"`) confirmados; SHACL
 da resposta agregada — `200` confirmado com o mesmo lote.
 
+## M5 — resolução de DID real — ✅ testado e confirmado
+
+- `did:web` dos 3 issuers: `GET /.well-known/did.json` em coop-a, coop-b e
+  certifier, com a mesma chave Ed25519 que assina os SD-JWT VC.
+- `did:key` dos produtores derivado de chave real
+  (`scripts/generate_did_key.py`, chaves em `fixtures/producer-keys/`,
+  git-ignoradas); os `.ttl` de exemplo usam esses DIDs.
+- Hardcodes sem dado real removidos da credencial (`certificateReference` no
+  coop-a; os 4 claims acima no certifier).
+- `scripts/test_credential_flow.py` (fluxo OID4VCI completo, flag `--demo`).
+- Fora de escopo por decisão: verificação de assinatura de credencial (fica
+  para M7/OID4VP — `docs/notas-arquitetura/m5-verificacao-assinatura-adiada.md`).
+
 ## Fora do escopo até agora (roadmap futuro, ver CLAUDE.md)
 
-M5 (resolução did:key/did:web real), M5.5 (PROV-O de certificação), M6-M8
+M5.5 (registro de produtor/rotação de chaves + PROV-O de certificação), M6-M8
 (revogação, SPARQL federado — já parcialmente antecipado em M9.5,
 blockchain/Besu/`AssetRegistry.sol`), M10-M11 não iniciados.

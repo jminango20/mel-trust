@@ -178,6 +178,49 @@ antes do verifier-demo (M9.5) fazer consulta federada com mais volume.
 Fuseki reais de coop-b (porta 3031) e certifier (porta 3032), incluindo
 caso de erro (`batch_number` inexistente → 404 nos dois).
 
+## M5 — resolução de DID real (did:web dos nós, did:key dos produtores) — ✅ testado e confirmado
+
+Escopo deliberadamente só de RESOLUÇÃO de identificador; verificação de
+assinatura de credencial fica pra M7 (OID4VP) — ver
+`docs/notas-arquitetura/m5-verificacao-assinatura-adiada.md`.
+
+**did:web dos issuers** (coop-a, coop-b, certifier): `did_endpoint.py` novo em
+cada nó, `GET /.well-known/did.json`. Publica o DID Document (DID Core,
+`verificationMethod` do tipo `JsonWebKey2020`, `publicKeyJwk` Ed25519) usando
+a MESMA chave de `keys.py` que assina os SD-JWT VC em `/credential` — o
+DID Document é consistente com as credenciais realmente emitidas. `DID_WEB`
+em `config.py` (`did:web:localhost%3A800N`) passa a ser resolvível, não só
+uma string no claim `iss`. Desvio de ambiente documentado: dev local em HTTP
+puro (a spec did:web exige HTTPS).
+
+**did:key dos produtores**: `scripts/generate_did_key.py` gera par Ed25519
+real por produtor (`fixtures/producer-keys/*.pem`, git-ignorado) e deriva o
+`did:key` (multicodec `0xed01` + base58btc, prefixo multibase `z`). Os
+`did:key` de exemplo dos `.ttl` (coop-a, coop-b) agora são derivados de chave
+real, não string inventada. Dependência nova em `coop-a/requirements.txt`:
+`base58` (só usada pelo script, não pelo runtime).
+
+**Remoção de hardcodes sem dado real**: `certificateReference` saiu da
+credencial do coop-a; `certificateReference`, `certificateType`,
+`certificateNumber` e `analysisActivity` saíram da do certifier. Antes eram
+literais fixos; agora ficam ausentes até M5.5 (PROV-O de certificação). Ver
+`docs/known-issues.md` e `docs/notas-arquitetura/certifier-claims-hardcoded-m4.md`.
+
+**Ferramenta de teste**: `scripts/test_credential_flow.py` executa o fluxo
+OID4VCI completo (token → nonce → proof JWT assinada com a chave do produtor
+→ credential) e decodifica header, payload e disclosures. Flag `--demo` dá um
+resumo legível para tela projetada.
+
+**Correção pós-entrega**: `sample-instance.ttl` (coop-a e coop-b) usava blank
+node no `geo:Point`, o que duplicava a geometria no Fuseki a cada execução do
+`pipeline.py`; agora o ponto tem URI fixa (reinserir é idempotente). O
+arquivo do coop-a também tinha comandos PowerShell colados por engano no
+final, que quebravam o parse.
+
+**Pendente (M5.5, não iniciado)**: registro de produtor com rotação de
+chaves; PROV-O para a atividade de análise do certifier (volta
+`certificateType`/`certificateNumber`/`analysisActivity`/`certificateReference`).
+
 ## M9.5 — verifier-demo: `GET /verify/{batch_number}` com SPARQL federado real — ✅ testado e confirmado
 
 Primeira fatia do papel de auditor externo do verifier-demo: dado um
@@ -257,3 +300,28 @@ SHACL de entrada).
 só caso sintético): ODRL — `400` (header ausente), `403` (propósito
 errado), `200` (`"Compliance EUDR"`) confirmados; validação SHACL da
 resposta agregada — `200` confirmado com o mesmo lote.
+
+## Ajuste pós-demo — floralOrigin migrado de certifier para coop-a/coop-b
+
+`floralOrigin` (origem floral do lote) saiu de `certifier/credential_endpoint.py`
+(e do fixture `certifier/data/sample-lab-result-*.ttl`) e passou a ser lido de
+`:hasFloralOrigin` no recurso do LOTE em `coop-a`/`coop-b`
+(`credential_endpoint.py` + `data/sample-instance.ttl`), como claim
+disclosable junto de `producerName`/`producerDID`. A query federada de
+`verifier-demo/verify_endpoint.py` também migrou: a busca saiu do bloco
+`SERVICE` do certifier e entrou nos dois ramos do `UNION` (coop-a local e
+coop-b via `SERVICE`); na resposta JSON, o campo saiu de `certification` e
+passou a ficar dentro de `batch`.
+
+**Motivo**: a narrativa canônica do Ivan (relato do lote MS-2026-042) mostra
+o produtor declarando a origem floral por voz na colheita ("mel silvestre da
+aroeira") — o laboratório nunca confirma isso na história. Campos de
+qualidade físico-química (umidade, HMF, acidez, diástase) permanecem no
+certifier, sem mudança — são sempre medição de laboratório, confirmado tanto
+pela ontologia (`rdfs:domain` genérico, mas o conteúdo é sempre
+físico-químico/analítico) quanto pela narrativa.
+
+**Testado por Juan** contra os 4 nós reais: `coop-a --demo` mostra
+`floralOrigin` nas disclosures; `certifier --demo` não mostra mais;
+`GET /verify/MS-2026-042` (`X-Access-Purpose: Compliance EUDR`) devolve
+`floralOrigin` dentro de `batch`, com o valor real.

@@ -20,12 +20,18 @@ não Apis — ver credential_endpoint.py).
 
 Escopo M5: DID Document (GET /.well-known/did.json) — ver did_endpoint.py.
 Mesmo mecanismo de coop-a.
+
+Ajuste pós-narrativa: POST /lote (ver lote_endpoint.py). Cadastra um lote via
+HTTP com o mesmo gate SHACL de pipeline.py (M1.5), sem precisar editar
+data/sample-instance.ttl à mão nem rodar o script via terminal. Réplica
+exata de coop-a/lote_endpoint.py, mesmo padrão.
 """
 from fastapi import FastAPI
 
 from config import BASE_URL, DID_WEB, NODE_NAME
 from credential_endpoint import router as credential_router
 from did_endpoint import router as did_router
+from lote_endpoint import router as lote_router
 from nonce_endpoint import router as nonce_router
 from token_endpoint import router as token_router
 
@@ -34,6 +40,7 @@ app.include_router(token_router)
 app.include_router(nonce_router)
 app.include_router(credential_router)
 app.include_router(did_router)
+app.include_router(lote_router)
 
 
 @app.get("/.well-known/openid-credential-issuer")

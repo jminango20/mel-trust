@@ -103,6 +103,7 @@
 :Lote_Mel_Jatai_2026_007
     a :HoneyNativeStinglessBee ;
     agritrust:ownedBy :Apicultor_Joao_Cerrado ;
+    :hasFloralOrigin "Silvestre"@pt ;
     :hasMoistureContent "23.0"^^xsd:decimal ;
     :hasHMFContent "9.0"^^xsd:decimal ;
     :hasAcidity "45.0"^^xsd:decimal ;
