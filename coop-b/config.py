@@ -80,7 +80,9 @@ CREDENTIAL_VALIDITY_SECONDS = int(
 # /sparql): é o mesmo dataset "coop-b", a mesma instância Fuseki, só um
 # endpoint HTTP diferente dentro dela. Mesma decisão de nomenclatura de
 # coop-a/config.py.
-FUSEKI_URL = os.environ.get("FUSEKI_URL", "http://localhost:3031/coop-b")
+# `127.0.0.1`, não `localhost` — mesma razão de coop-a/config.py (IPv6
+# quebrado no encaminhamento de porta do Docker Desktop nesta máquina).
+FUSEKI_URL = os.environ.get("FUSEKI_URL", "http://127.0.0.1:3031/coop-b")
 FUSEKI_ADMIN_USER = os.environ.get("FUSEKI_ADMIN_USER", "admin")
 FUSEKI_ADMIN_PASSWORD = os.environ.get("FUSEKI_ADMIN_PASSWORD")
 

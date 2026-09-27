@@ -84,7 +84,12 @@ CREDENTIAL_VALIDITY_SECONDS = int(
 # /sparql), porque é o mesmo dataset "coop-a", a mesma instância Fuseki, só
 # um endpoint HTTP diferente dentro dela. Não faz sentido introduzir nomes
 # de env var paralelos (ex.: FUSEKI_QUERY_URL) para a mesma credencial/host.
-FUSEKI_URL = os.environ.get("FUSEKI_URL", "http://localhost:3030/coop-a")
+# `127.0.0.1`, não `localhost`: `requests` resolve "localhost" tentando
+# IPv6 primeiro, e o encaminhamento de porta do Docker Desktop nesta classe
+# de ambiente de dev pode estar quebrado para IPv6 (conecta e reseta a
+# meio da requisição) — `127.0.0.1` força IPv4 e evita isso. Achado real,
+# não hipotético — ver docs/known-issues.md.
+FUSEKI_URL = os.environ.get("FUSEKI_URL", "http://127.0.0.1:3030/coop-a")
 FUSEKI_ADMIN_USER = os.environ.get("FUSEKI_ADMIN_USER", "admin")
 FUSEKI_ADMIN_PASSWORD = os.environ.get("FUSEKI_ADMIN_PASSWORD")
 

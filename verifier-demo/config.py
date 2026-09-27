@@ -42,8 +42,16 @@ BASE_URL = os.environ.get("BASE_URL", "http://localhost:8004")
 # docs/notas-arquitetura/verifier-demo-service-federado.md) — não há
 # razão de domínio para ser especificamente coop-a em vez de coop-b, só
 # precisa ser um dos três, de forma consistente.
+# `127.0.0.1`, não `localhost`: `requests` (chamado pelo verifier-demo, no
+# HOST) resolve "localhost" tentando IPv6 primeiro, e o encaminhamento de
+# porta do Docker Desktop nesta classe de ambiente de dev pode estar
+# quebrado para IPv6 (conecta e reseta a meio da requisição) — `127.0.0.1`
+# força IPv4 e evita isso. Achado real, ver docs/known-issues.md. NÃO
+# aplicável aos dois `_SERVICE_URL` abaixo: aqueles resolvem de DENTRO do
+# container do coop-a, onde `127.0.0.1` apontaria para o próprio
+# container, não para o host — por isso continuam em `host.docker.internal`.
 COOP_A_SPARQL_URL = os.environ.get(
-    "COOP_A_SPARQL_URL", "http://localhost:3030/coop-a/sparql"
+    "COOP_A_SPARQL_URL", "http://127.0.0.1:3030/coop-a/sparql"
 )
 
 # URLs usadas DENTRO das cláusulas SERVICE da query (resolvidas pelo
