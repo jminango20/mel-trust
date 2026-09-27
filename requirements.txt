@@ -1,0 +1,9 @@
+# Dependências só para rodar a suíte de testes em tests/ (BDD contra os nós
+# reais via HTTP, `pytest tests/`). NÃO é o requirements.txt de nenhum nó —
+# cada um continua com o seu próprio (coop-a/requirements.txt etc). Instalar
+# num venv que já tenha jwcrypto/requests (ex.: certifier/.venv, que já usa
+# essas duas para scripts/test_credential_flow.py) evita reinstalar as duas.
+pytest
+pytest-bdd
+requests
+jwcrypto
