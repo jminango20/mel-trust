@@ -16,6 +16,12 @@ __pycache__/
 # keys/ na raiz do repo — "keys/*.pem" sozinho só casaria com a raiz.
 **/keys/*.pem
 
+# Chaves privadas de conta Ethereum/secp256k1 (Besu) de cada nó — geradas por
+# scripts/blockchain/generate_node_accounts.py em <node>/keys/<node>-besu.key.
+# Mesma lógica de **/keys/*.pem acima: nunca versionar chave privada, nem de
+# teste/MVP, mesmo em rede zero-gas.
+**/keys/*.key
+
 # Chaves privadas de PRODUTOR (Ed25519, PEM) — geradas por
 # scripts/generate_did_key.py (M5, Tarefa 2) para derivar os did:key reais
 # usados em coop-a/data/*.ttl, coop-b/data/*.ttl e

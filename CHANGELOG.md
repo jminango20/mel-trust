@@ -325,3 +325,15 @@ físico-químico/analítico) quanto pela narrativa.
 `floralOrigin` nas disclosures; `certifier --demo` não mostra mais;
 `GET /verify/MS-2026-042` (`X-Access-Purpose: Compliance EUDR`) devolve
 `floralOrigin` dentro de `batch`, com o valor real.
+
+## M8 (ancoragem blockchain) — progresso inicial
+
+Confirmados os 5 contratos na rede Semear (chain ID 648, zero gas) via
+`AddressDiscovery` — `AccessChannelManager`, `SchemaRegistry`,
+`ProcessRegistry`, `TransactionOrchestrator`, `AssetRegistry` — todos com
+bytecode real (`eth_getCode`) e `getVersion()='1.0.0'` nos 4 que implementam
+essa interface. Canal `"mel-trust"` criado on-chain com sucesso (tx
+`0xe3bf7847fba0e36292969ef1219967148d33fbc11899142a92eb7254c414b1a4`), conta
+admin `0xf39Fd6...2266` com `CHANNEL_AUTHORITY_ROLE` e
+`CHANNEL_ADMIN_ROLE` confirmados via `hasRole()`. Detalhes e o que falta:
+`docs/notas-arquitetura/m8-ancoragem-blockchain.md`.
