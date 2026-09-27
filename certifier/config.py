@@ -82,7 +82,9 @@ CREDENTIAL_VALIDITY_SECONDS = int(
 # /sparql): é o mesmo dataset "certifier", a mesma instância Fuseki, só um
 # endpoint HTTP diferente dentro dela. Mesma decisão de nomenclatura de
 # coop-a/coop-b.
-FUSEKI_URL = os.environ.get("FUSEKI_URL", "http://localhost:3032/certifier")
+# `127.0.0.1`, não `localhost` — mesma razão de coop-a/config.py (IPv6
+# quebrado no encaminhamento de porta do Docker Desktop nesta máquina).
+FUSEKI_URL = os.environ.get("FUSEKI_URL", "http://127.0.0.1:3032/certifier")
 FUSEKI_ADMIN_USER = os.environ.get("FUSEKI_ADMIN_USER", "admin")
 FUSEKI_ADMIN_PASSWORD = os.environ.get("FUSEKI_ADMIN_PASSWORD")
 
@@ -96,3 +98,26 @@ FUSEKI_ADMIN_PASSWORD = os.environ.get("FUSEKI_ADMIN_PASSWORD")
 # credencial de certificação ("MS-2026-042") — agora é o fallback de qual
 # laudo buscar no Fuseki via essa chave.
 DEFAULT_BATCH_NUMBER = os.environ.get("DEFAULT_BATCH_NUMBER", "MS-2026-042")
+
+# --- M5.6 (pós-narrativa): federação para o gate regulatório real ---
+#
+# O certifier deixou de ler fixture .ttl local (certifier/data/sample-lab-
+# result-*.ttl via pipeline.py) para POST /credential — ele agora consulta,
+# em tempo real, o Fuseki do lab (medições físico-químicas) e de
+# coop-a/coop-b (productType do lote) via SPARQL federado, mesmo padrão
+# `SERVICE` já usado em verifier-demo/verify_endpoint.py (ver docstring lá
+# para o porquê de `host.docker.internal`: estas URLs são resolvidas de
+# DENTRO do container do Fuseki do certifier — que atua como nó de entrada
+# desta consulta —, não pelo processo Python do certifier). Nenhuma dessas
+# três é `127.0.0.1`: essa correção (ver FUSEKI_URL acima) vale para
+# conexão HOST -> porta publicada; aqui o contexto de rede é outro
+# (container -> host), resolvido por host.docker.internal.
+COOP_A_SPARQL_SERVICE_URL = os.environ.get(
+    "COOP_A_SPARQL_SERVICE_URL", "http://host.docker.internal:3030/coop-a/sparql"
+)
+COOP_B_SPARQL_SERVICE_URL = os.environ.get(
+    "COOP_B_SPARQL_SERVICE_URL", "http://host.docker.internal:3031/coop-b/sparql"
+)
+LAB_SPARQL_SERVICE_URL = os.environ.get(
+    "LAB_SPARQL_SERVICE_URL", "http://host.docker.internal:3033/lab/sparql"
+)

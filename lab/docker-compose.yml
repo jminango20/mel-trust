@@ -1,0 +1,29 @@
+# Sobe o Apache Jena Fuseki (triple store) do nó lab.
+#
+# Mesma imagem/mecanismo de coop-a/coop-b/certifier/verifier-demo (ver
+# comentário completo em certifier/docker-compose.yml): stain/jena-fuseki
+# gera ADMIN_PASSWORD, cria o dataset TDB "lab" via FUSEKI_DATASET_1, e
+# persiste em /fuseki/databases/lab dentro do volume nomeado.
+#
+# Porta host 3033 (diferente de coop-a=3030, coop-b=3031, certifier=3032)
+# para os quatro Fusekis poderem rodar ao mesmo tempo na máquina de dev sem
+# conflito.
+services:
+  fuseki:
+    image: stain/jena-fuseki:latest
+    container_name: lab-fuseki
+    ports:
+      - "3033:3030"
+    environment:
+      ADMIN_PASSWORD: ${FUSEKI_ADMIN_PASSWORD}
+      FUSEKI_DATASET_1: lab
+    volumes:
+      - fuseki-data:/fuseki
+    # Permite que SERVICE de outro Fuseki (o certifier, consultando via
+    # SPARQL federado) alcance ESTE container via host.docker.internal —
+    # mesmo padrão já usado entre coop-a/coop-b/certifier.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  fuseki-data:

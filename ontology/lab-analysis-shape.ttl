@@ -1,0 +1,77 @@
+@prefix : <https://w3id.org/agrisemantics/AGRITRUST/bee-extension#> .
+@prefix agritrust: <https://w3id.org/agrisemantics/AGRITRUST#> .
+@prefix lab: <https://w3id.org/agrisemantics/AGRITRUST/lab-extension#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+# =============================================================================
+#  AnaliseLaboratorialShape — nó lab
+# =============================================================================
+#
+# NÃO faz parte da ontologia canônica de Ivan Bergier (o resto de ontology/*
+# é cópia de trabalho da fonte publicada — ver CLAUDE.md). Mesmo espírito de
+# ontology/verifier-response-shape.ttl: arquivo separado para um contrato que
+# só existe dentro deste nó, não uma shape a mais em validation-shapes.ttl.
+#
+# Namespace NOVO e exclusivo deste arquivo: `lab:` — só a classe
+# `lab:AnaliseLaboratorial` (usada como sh:targetClass) é nova. As QUATRO
+# propriedades físico-químicas abaixo (`:hasMoistureContent`,
+# `:hasHMFContent`, `:hasAcidity`, `:hasDiastaseActivity`) são EXATAMENTE as
+# mesmas de ontology/validation-shapes.ttl (prefixo `:` = bee-extension#) —
+# não URIs novas. Isso é proposital: o certifier reaproveita esses mesmos
+# valores depois, num grafo que roda contra as shapes regulatórias reais
+# (que usam esses mesmos paths), então os nomes de propriedade não podem
+# divergir entre o que o lab grava e o que o certifier lê.
+#
+# Diferença de propósito em relação a validation-shapes.ttl: aquele arquivo
+# valida REGRA DE NEGÓCIO/LIMITE REGULATÓRIO (ex.: umidade <= 20% para mel de
+# Apis, IN 11/2000) — rodado exclusivamente pelo certifier. Esta shape valida
+# só FORMA/PLAUSIBILIDADE de uma análise recebida por este nó: presença dos
+# campos e tipo de dado correto (`sh:datatype xsd:decimal`/`xsd:string`) —
+# SEM nenhum `sh:minInclusive`/`sh:maxInclusive`. O lab não decide se um
+# valor está dentro do limite legal, só que ele existe e tem o formato certo;
+# quem aplica o limite regulatório continua sendo o certifier, via
+# ontology/validation-shapes.ttl.
+#
+# Todos os sh:property abaixo são sh:severity sh:Violation — diferente das
+# shapes regulatórias (que têm Info/Warning para mel nativo), aqui é gate de
+# ENTRADA: qualquer falha bloqueia a inserção (ver lab/shacl_pipeline.py).
+
+lab:AnaliseLaboratorialShape
+    a sh:NodeShape ;
+    sh:targetClass lab:AnaliseLaboratorial ;
+    sh:property [
+        sh:path agritrust:batchNumber ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:severity sh:Violation ;
+        sh:message "Análise precisa referenciar um batchNumber"@pt
+    ] ;
+    sh:property [
+        sh:path :hasMoistureContent ;
+        sh:minCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:severity sh:Violation ;
+        sh:message "moistureContent ausente ou não é decimal"@pt
+    ] ;
+    sh:property [
+        sh:path :hasHMFContent ;
+        sh:minCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:severity sh:Violation ;
+        sh:message "hmfContent ausente ou não é decimal"@pt
+    ] ;
+    sh:property [
+        sh:path :hasAcidity ;
+        sh:minCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:severity sh:Violation ;
+        sh:message "acidityContent ausente ou não é decimal"@pt
+    ] ;
+    sh:property [
+        sh:path :hasDiastaseActivity ;
+        sh:minCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:severity sh:Violation ;
+        sh:message "diastaseActivity ausente ou não é decimal"@pt
+    ] .

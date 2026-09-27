@@ -12,40 +12,68 @@ O que MUDA em relação a coop-a/coop-b: o TIPO de credencial e seus claims.
 O certifier não emite uma credencial de "lote original" (isso é papel da
 cooperativa que produziu o mel) — ele emite uma credencial de CERTIFICAÇÃO:
 o resultado de uma análise laboratorial (laudo) sobre uma amostra de um
-lote que a cooperativa já produziu e cadastrou. Ver certifier/pipeline.py e
-certifier/data/sample-lab-result-valid.ttl para o contexto de domínio.
+lote que a cooperativa já produziu e cadastrou.
 
 Tipo: `HoneyCertificationCredential`
 (vct = https://agritrust.example/vct/honey-certification), distinto de
 `HoneyBatchCredential` (vct = .../honey-batch) usado por coop-a/coop-b — ver
 docstring original de M3 para a justificativa completa de ter dois VCTs.
 
-Fluxo de dados fixos vs. dinâmicos: em M3, TODOS os claims eram HARDCODED.
-Este é o M4: a Parte 4 (montagem dos claims) agora roda uma consulta SPARQL
-SELECT real contra o dataset "certifier" do Fuseki para os campos que TÊM
-correspondência real em certifier/data/sample-lab-result-valid.ttl.
+M5.6 (pós-narrativa) — REESTRUTURAÇÃO: o certifier deixou de ler fixture
+.ttl local (certifier/data/sample-lab-result-*.ttl via pipeline.py) para
+montar os claims desta credencial. `pipeline.py`/`certifier/data/*.ttl`
+continuam existindo no repo (não apagados), mas ficaram desconectados
+deste fluxo — são histórico/legado, não a fonte de dado real do
+`/credential` a partir de agora.
 
-SCHEMA MISMATCH (documentado explicitamente, não escondido): nem todo claim
-que M3 hardcoded tem uma tripla correspondente no grafo do laudo. Migraram
-para SPARQL real: `legalStatus` (sempre visível), `qualityStatus`,
-`moistureContent`, `hmfContent`, `acidityContent`, `diastaseActivity`
-(disclosable) — todos existem como triplas em
-sample-lab-result-valid.ttl (agritrust:legalStatus, agritrust:qualityStatus,
-:hasMoistureContent, :hasHMFContent, :hasAcidity, :hasDiastaseActivity) e
-são lidos via agritrust:batchNumber do lote referenciado pelo laudo.
+O NOVO fluxo (Parte 4 abaixo), a cada chamada de `/credential`:
+  1. Roda UMA query SPARQL federada (mesmo padrão `SERVICE` real de
+     verifier-demo/verify_endpoint.py — ver a docstring de lá para a
+     explicação completa da mecânica), enviada ao PRÓPRIO Fuseki do
+     certifier (nó de entrada), que resolve dois blocos `SERVICE`:
+       - coop-a OU coop-b (UNION): busca o `productType` do lote (o
+         certifier precisa saber se é `:HoneyApis` ou
+         `:HoneyNativeStinglessBee` para o SHACL regulatório aplicar o
+         limite certo).
+       - lab (OPTIONAL): busca `moistureContent`/`hmfContent`/`acidityContent`/
+         `diastaseActivity` — as medições físico-químicas de verdade,
+         agora vindas do nó `lab/` (POST /analise), não mais gravadas
+         localmente no certifier.
+  2. Monta um grafo RDF EFêMERO, em memória, nunca persistido em nenhum
+     Fuseki: um recurso com `rdf:type` = o `productType` encontrado, e as
+     medições encontradas como propriedades (mesmas URIs de sempre:
+     `:hasMoistureContent` etc.) — mesma técnica que
+     `verify_endpoint.py:validate_response_shape` já usa para validar a
+     FORMA da resposta agregada; aqui o uso é validar o CONTEÚDO contra
+     regra regulatória, não a forma.
+  3. Roda `pyshacl.validate` desse grafo efêmero contra
+     `ontology/validation-shapes.ttl` — as MESMAS shapes regulatórias reais
+     (`HoneyApisMoistureShape`, `HoneyNativeMoistureShape` etc.) que
+     `coop-a/pipeline.py`/`coop-b/pipeline.py` já rodam na entrada do
+     lote. Antes desta reestruturação, essas shapes regulatórias nunca
+     eram aplicadas pelo certifier — ele só lia `agritrust:legalStatus`/
+     `agritrust:qualityStatus` como literais já prontos no fixture (ou
+     seja, a "aprovação" era um dado de exemplo escrito à mão, não uma
+     decisão calculada). Agora é calculada de verdade a cada emissão.
+  4. Só se `conforms=True`: monta `legalStatus`/`qualityStatus` (derivados
+     do resultado do SHACL, não mais lidos de um literal do grafo — ver
+     `_decidir_status` abaixo) e segue para assinar a credencial (Parte 5,
+     inalterada). Se `conforms=False`: `POST /credential` retorna `400`
+     com as violações (mesmo contrato de erro de `coop-a/lote_endpoint.py`)
+     — NENHUMA credencial é emitida para um lote fora do padrão
+     regulatório.
 
-`floralOrigin` MUDOU DE DONO (pós-M4): não é mais emitido pelo certifier.
-No caso de uso canônico do Ivan, é o PRODUTOR quem declara a origem floral
-por voz na colheita — o laboratório nunca confirma isso. Passou a ser
-claim de coop-a/coop-b (`:hasFloralOrigin` no recurso do LOTE, não no
-laudo) — ver coop-a/credential_endpoint.py.
+`floralOrigin` continua FORA (mudou de dono para coop-a/coop-b antes desta
+reestruturação — dado declarado pelo produtor na colheita, não confirmado
+pelo laboratório; sem relação com a mudança desta entrega).
 
-AUSENTES da credencial (sem correspondência no grafo do certifier):
-`certificateType`, `certificateNumber`, o objeto `analysisActivity`
-(startedAtTime/endedAtTime/executedBy) e `certificateReference`. Removidos
-do MVP atual por falta de modelagem PROV-O; migração em M5.5. Ver
-docs/notas-arquitetura/certifier-claims-hardcoded-m4.md.
+AUSENTES da credencial, sem mudança nesta entrega (sem correspondência
+possível ainda, nem no lab nem em coop-a/coop-b): `certificateType`,
+`certificateNumber`, o objeto `analysisActivity`
+(startedAtTime/endedAtTime/executedBy) e `certificateReference`. Migração
+prevista pra M5.5. Ver docs/notas-arquitetura/certifier-claims-hardcoded-m4.md.
 """
+import os
 import time
 
 import jwt as pyjwt
@@ -53,16 +81,22 @@ import requests
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from jwcrypto.jwk import JWK
+from pyshacl import validate as shacl_validate
+from rdflib import RDF, Graph, Literal, Namespace, URIRef
+from rdflib.namespace import XSD
 from sd_jwt.common import SDObj
 from sd_jwt.issuer import SDJWTIssuer
 
 from config import (
+    COOP_A_SPARQL_SERVICE_URL,
+    COOP_B_SPARQL_SERVICE_URL,
     CREDENTIAL_VALIDITY_SECONDS,
     DEFAULT_BATCH_NUMBER,
     DID_WEB,
     FUSEKI_ADMIN_PASSWORD,
     FUSEKI_ADMIN_USER,
     FUSEKI_URL,
+    LAB_SPARQL_SERVICE_URL,
 )
 from keys import get_issuer_key
 from nonce_endpoint import is_valid_c_nonce
@@ -89,62 +123,66 @@ SD_JWT_TYP = "dc+sd-jwt"
 PROOF_JWT_TYP = "openid4vci-proof+jwt"
 
 
-# --- M4: query SPARQL contra o Fuseki do certifier ---
+# --- M5.6: query SPARQL FEDERADA (SERVICE) contra coop-a/coop-b + lab ---
 #
-# Namespaces usados na instância (certifier/data/sample-lab-result-valid.ttl)
-# — os MESMOS prefixos/URIs declarados no cabeçalho daquele .ttl.
+# Namespaces do bee-extension/agritrust de sempre — os MESMOS usados em
+# ontology/validation-shapes.ttl e em coop-a/coop-b/lab.
 _SPARQL_PREFIXES = """
 PREFIX : <https://w3id.org/agrisemantics/AGRITRUST/bee-extension#>
 PREFIX agritrust: <https://w3id.org/agrisemantics/AGRITRUST#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 """
 
-# Query SELECT que busca, a partir de agritrust:batchNumber (aqui: o número
-# do LOTE ORIGINAL sobre o qual o laudo fala, não um identificador próprio do
-# laudo — o .ttl do certifier não modela um recurso "laudo" separado do
-# lote; ele registra as medições laboratoriais DIRETAMENTE no mesmo recurso
-# :Lote_Mel_Silvestre_2026_042, só que agora do lado do dataset "certifier",
-# povoado a partir do resultado de laboratório em vez da autodeclaração do
-# produtor). Comentários por campo:
+BEE = Namespace("https://w3id.org/agrisemantics/AGRITRUST/bee-extension#")
+AGRITRUST = Namespace("https://w3id.org/agrisemantics/AGRITRUST#")
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REGULATORY_SHAPES_PATH = os.path.join(REPO_ROOT, "ontology", "validation-shapes.ttl")
+
+# Query federada: UNION entre coop-a e coop-b pra achar o productType do
+# lote (mesma lógica de "nunca os dois, um lote existe numa cooperativa só"
+# de verify_endpoint.py) + OPTIONAL SERVICE no lab pras medições. Enviada
+# ao PRÓPRIO Fuseki do certifier (nó de entrada — resolve os SERVICE).
 #
-# - ?labResult: NÃO expomos um claim `productType` aqui — diferente de
-#   coop-a/coop-b, o certifier (M3) nunca definiu esse claim na credencial
-#   de CERTIFICAÇÃO (o tipo do mel é responsabilidade da credencial de
-#   LOTE, não da de certificação). Ainda assim exigimos `?labResult a
-#   ?anyType` (variável não usada em nenhum claim, só como guarda na
-#   WHERE) para não casar com QUALQUER recurso que tenha por acaso
-#   `agritrust:batchNumber` + `agritrust:legalStatus` — exigir um rdf:type
-#   qualquer é uma checagem mínima de que o recurso é um dado de domínio
-#   tipado (revisão pós-M4: a primeira versão desta query não tinha essa
-#   guarda).
-# - ?legalStatus: NÃO OPTIONAL — é o claim sempre-visível `legalStatus` da
-#   credencial (decisão binária final de comercialização); se um laudo não
-#   tiver esse campo preenchido, é dado de domínio incompleto e preferimos
-#   que a query não devolva parte dos claims silenciosamente (mesma postura
-#   de coop-a com agritrust:ownedBy).
-# - ?qualityStatus / ?moisture / ?hmf / ?acidity / ?diastase: cada um em seu
-#   próprio OPTIONAL — nem todo laudo necessariamente preenche todos os
-#   parâmetros físico-químicos (ex.: um laudo simplificado sem diástase).
-#   `diastaseActivity` ESTÁ presente aqui (diferente de coop-a/coop-b): o
-#   laudo do certifier de fato mede esse parâmetro (:hasDiastaseActivity
-#   existe em sample-lab-result-valid.ttl), e M3 já definiu
-#   `diastaseActivity` como claim real desta credencial. (`floralOrigin` NÃO
-#   é buscado aqui: mudou de dono para coop-a/coop-b — ver docstring do
-#   módulo.)
-_CLAIMS_QUERY_TEMPLATE = _SPARQL_PREFIXES + """
-SELECT ?legalStatus ?qualityStatus
-       ?moisture ?hmf ?acidity ?diastase
+# `ORDER BY ?batch` + `LIMIT 1`: achado real (não hipotético) rodando
+# tests/step_defs/test_lab_certifier.py — o coop-a acumulou DOIS recursos
+# distintos para o mesmo agritrust:batchNumber "MS-2026-042"
+# (:Lote_Mel_Silvestre_2026_042, do fixture original, e :Lote_MS_2026_042,
+# criado por POST /lote em teste anterior). Sem ORDER BY, qual dos dois o
+# SELECT ... LIMIT 1 devolve não é garantido por nenhuma regra SPARQL — é
+# implementação-dependente do Fuseki. `?batch` (o próprio recurso do lote)
+# não era projetado antes; agora é, só para servir de critério de
+# ordenação determinístico — não é usado em nenhum claim da credencial.
+# Isso NÃO resolve a duplicação em si (ver docs/known-issues.md), só torna
+# o RESULTADO reprodutível entre chamadas repetidas.
+_FEDERATED_QUERY_TEMPLATE = _SPARQL_PREFIXES + """
+SELECT ?batch ?productType ?producer ?moisture ?hmf ?acidity ?diastase
 WHERE {
-  ?labResult agritrust:batchNumber %(batch_number)s ;
-             agritrust:legalStatus ?legalStatus ;
-             a ?anyType .
-  OPTIONAL { ?labResult agritrust:qualityStatus ?qualityStatus }
-  OPTIONAL { ?labResult :hasMoistureContent ?moisture }
-  OPTIONAL { ?labResult :hasHMFContent ?hmf }
-  OPTIONAL { ?labResult :hasAcidity ?acidity }
-  OPTIONAL { ?labResult :hasDiastaseActivity ?diastase }
+  {
+    SERVICE <%(coop_a_service_url)s> {
+      ?batch agritrust:batchNumber %(batch_number)s ;
+             a ?productType ;
+             agritrust:ownedBy ?producer .
+    }
+  }
+  UNION
+  {
+    SERVICE <%(coop_b_service_url)s> {
+      ?batch agritrust:batchNumber %(batch_number)s ;
+             a ?productType ;
+             agritrust:ownedBy ?producer .
+    }
+  }
+  OPTIONAL {
+    SERVICE <%(lab_service_url)s> {
+      ?analise agritrust:batchNumber %(batch_number)s .
+      OPTIONAL { ?analise :hasMoistureContent ?moisture }
+      OPTIONAL { ?analise :hasHMFContent ?hmf }
+      OPTIONAL { ?analise :hasAcidity ?acidity }
+      OPTIONAL { ?analise :hasDiastaseActivity ?diastase }
+    }
+  }
 }
+ORDER BY ?batch
 LIMIT 1
 """
 
@@ -159,14 +197,22 @@ def _sparql_literal(value: str) -> str:
     return f'"{escaped}"'
 
 
-def query_certification_claims(batch_number: str) -> dict | None:
-    """Consulta o Fuseki do certifier (SPARQL SELECT) pelos dados do laudo.
+def _query_federated(batch_number: str) -> dict | None:
+    """Roda a query federada única (productType via coop-a/coop-b + medições
+    via lab) contra o Fuseki de ENTRADA (o próprio certifier).
 
-    Retorna um dict com os campos brutos da primeira linha de resultado, ou
-    None se nenhum laudo com esse batch_number existir no grafo — o
-    chamador decide o que fazer (404), esta função não decide HTTP status.
+    Retorna None se o lote não foi achado em NENHUMA cooperativa (nem
+    productType) OU se foi achado mas o lab não tem NENHUMA medição pra ele
+    ainda (sem dado físico-químico, não há o que validar) — o chamador
+    decide o HTTP status (404), esta função só decide "achei o suficiente
+    pra tentar validar, ou não".
     """
-    query = _CLAIMS_QUERY_TEMPLATE % {"batch_number": _sparql_literal(batch_number)}
+    query = _FEDERATED_QUERY_TEMPLATE % {
+        "batch_number": _sparql_literal(batch_number),
+        "coop_a_service_url": COOP_A_SPARQL_SERVICE_URL,
+        "coop_b_service_url": COOP_B_SPARQL_SERVICE_URL,
+        "lab_service_url": LAB_SPARQL_SERVICE_URL,
+    }
 
     response = requests.post(
         f"{FUSEKI_URL}/sparql",
@@ -187,14 +233,109 @@ def query_certification_claims(batch_number: str) -> dict | None:
         cell = row.get(key)
         return cell["value"] if cell else None
 
+    product_type = _val("productType")
+    producer = _val("producer")
+    moisture = _val("moisture")
+    hmf = _val("hmf")
+    acidity = _val("acidity")
+    diastase = _val("diastase")
+
+    if product_type is None:
+        return None
+    if moisture is None and hmf is None and acidity is None and diastase is None:
+        # Lote existe em coop-a/coop-b, mas o lab não tem NENHUMA medição
+        # pra ele ainda — nada a validar/certificar.
+        return None
+
     return {
-        "legalStatus": _val("legalStatus"),
-        "qualityStatus": _val("qualityStatus"),
-        "moisture": _val("moisture"),
-        "hmf": _val("hmf"),
-        "acidity": _val("acidity"),
-        "diastase": _val("diastase"),
+        "productType": product_type,
+        "producer": producer,
+        "moisture": moisture,
+        "hmf": hmf,
+        "acidity": acidity,
+        "diastase": diastase,
     }
+
+
+def _monta_grafo_efemero(batch_number: str, row: dict) -> Graph:
+    """Grafo RDF EM MEMÓRIA, nunca persistido em nenhum Fuseki — só pra
+    rodar pyshacl contra as shapes regulatórias reais. Mesma técnica de
+    verify_endpoint.py:validate_response_shape (montar grafo a partir de um
+    resultado SPARQL federado pra validar, não pra gravar).
+
+    Inclui `agritrust:batchNumber`/`agritrust:ownedBy` (não só as medições
+    físico-químicas): `HoneyApisIdentificationShape`
+    (ontology/validation-shapes.ttl) exige os dois com `sh:minCount 1` —
+    sem eles, QUALQUER lote reprovaria por identificação ausente, mesmo com
+    medições dentro do limite. `ownedBy` vem do MESMO resultado federado
+    (coop-a/coop-b), não é inventado aqui."""
+    g = Graph()
+    node = BEE["AnaliseEfemera"]
+    g.add((node, RDF.type, URIRef(row["productType"])))
+    g.add((node, AGRITRUST.batchNumber, Literal(batch_number)))
+    g.add((node, AGRITRUST.ownedBy, URIRef(row["producer"])))
+    if row["moisture"] is not None:
+        g.add((node, BEE.hasMoistureContent, Literal(row["moisture"], datatype=XSD.decimal)))
+    if row["hmf"] is not None:
+        g.add((node, BEE.hasHMFContent, Literal(row["hmf"], datatype=XSD.decimal)))
+    if row["acidity"] is not None:
+        g.add((node, BEE.hasAcidity, Literal(row["acidity"], datatype=XSD.decimal)))
+    if row["diastase"] is not None:
+        g.add((node, BEE.hasDiastaseActivity, Literal(row["diastase"], datatype=XSD.decimal)))
+    return g
+
+
+def _run_regulatory_shacl(data_graph: Graph):
+    """Roda pyshacl contra ontology/validation-shapes.ttl — as MESMAS shapes
+    regulatórias que coop-a/coop-b/pipeline.py já usam na entrada do lote.
+    Mesmos parâmetros de validate() usados em coop-a/shacl_pipeline.py."""
+    shapes_graph = Graph()
+    shapes_graph.parse(REGULATORY_SHAPES_PATH, format="turtle")
+    conforms, results_graph, results_text = shacl_validate(
+        data_graph,
+        shacl_graph=shapes_graph,
+        inference="none",
+        allow_warnings=True,
+        allow_infos=True,
+    )
+    return conforms, results_graph
+
+
+def _extract_violations(results_graph: Graph) -> list[str]:
+    """Mesmo formato de linha usado em coop-a/shacl_pipeline.py."""
+    query = """
+    PREFIX sh: <http://www.w3.org/ns/shacl#>
+    SELECT ?focusNode ?severity ?message WHERE {
+        ?result a sh:ValidationResult ;
+                sh:focusNode ?focusNode ;
+                sh:resultSeverity ?severity .
+        OPTIONAL { ?result sh:resultMessage ?message }
+    }
+    """
+    lines = []
+    for focus_node, severity, message in results_graph.query(query):
+        severity_label = str(severity).rsplit("#", 1)[-1]
+        msg = message if message is not None else "(sem sh:resultMessage)"
+        lines.append(f"[{severity_label}] {focus_node}: {msg}")
+    return lines
+
+
+def _decidir_status(product_type_uri: str) -> tuple[str, str]:
+    """Deriva (legalStatus, qualityStatus) a partir do productType, DEPOIS
+    de conforms=True já confirmado pelo SHACL regulatório. Antes desta
+    reestruturação, esses dois textos eram literais lidos direto de um
+    fixture .ttl (dado de exemplo escrito à mão); agora são DERIVADOS da
+    decisão real do SHACL — texto plausível por tipo de produto,
+    simplificação documentada (não pretende ser a redação jurídica exata
+    de cada norma)."""
+    local_name = product_type_uri.rsplit("#", 1)[-1].rsplit("/", 1)[-1]
+    if local_name == "HoneyNativeStinglessBee":
+        quality = "Em Conformidade com Padrão Científico para Meliponídeos e Portaria 1.439/2025"
+    elif local_name == "HoneyApis":
+        quality = "Em Conformidade com IN 11/2000 e Portaria 795/2023"
+    else:
+        quality = "Em conformidade com os limites regulatórios aplicáveis"
+    return "Aprovado para Comercialização", quality
 
 
 def _oauth_error(status_code: int, error: str, description: str, www_authenticate: str | None = None) -> JSONResponse:
@@ -300,27 +441,45 @@ async def credential_endpoint(request: Request):
     holder_jwk_dict = proof_header.get("jwk")
     holder_key = JWK(**holder_jwk_dict) if holder_jwk_dict else None
 
-    # --- 4. Monta os claims da credencial (M4: query SPARQL real ao Fuseki
-    # para os campos com correspondência no grafo; hardcoded para os que não
-    # têm — ver docstring do módulo para a lista completa) ---
+    # --- 4. Consulta federada (coop-a/coop-b + lab) + SHACL regulatório
+    # real — ver docstring do módulo (M5.6) para o fluxo completo ---
     try:
-        row = query_certification_claims(batch_number)
+        row = _query_federated(batch_number)
     except requests.RequestException as exc:
-        # Falha de infraestrutura (Fuseki fora do ar, timeout, credencial de
-        # admin errada etc.) — 502 porque o certifier (issuer) depende de um
-        # serviço upstream (Fuseki) que falhou ao responder.
+        # Falha de infraestrutura (algum dos 3 Fuseki fora do ar, timeout,
+        # credencial de admin errada etc.) — 502, mesmo padrão de antes.
         return _oauth_error(502, "server_error", f"Falha ao consultar o Fuseki: {exc}")
 
     if row is None:
-        # Nenhum laudo com esse batchNumber existe no grafo do certifier —
-        # não emitimos uma credencial de certificação vazia/quebrada,
-        # retornamos 404.
+        # Lote não encontrado em coop-a/coop-b, OU encontrado mas sem
+        # nenhuma medição no lab ainda — não emitimos uma credencial de
+        # certificação vazia/quebrada, retornamos 404.
         return _oauth_error(
             404,
             "invalid_request",
-            f"Nenhum laudo encontrado no Fuseki (dataset certifier) com "
-            f"agritrust:batchNumber = {batch_number!r}.",
+            f"Lote {batch_number!r} não encontrado em coop-a/coop-b, ou sem "
+            f"nenhuma análise registrada no lab (POST /analise) ainda.",
         )
+
+    conforms, results_graph = _run_regulatory_shacl(_monta_grafo_efemero(batch_number, row))
+    if not conforms:
+        # Dado existe (lote + análise do lab), mas fora do limite
+        # regulatório (HoneyApisMoistureShape etc.) — NENHUMA credencial de
+        # certificação é emitida. Mesmo contrato de erro de
+        # coop-a/lote_endpoint.py (400, error=shacl_violation, violations).
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "shacl_violation",
+                "error_description": (
+                    "Dado do lote não passou na validação SHACL regulatória. "
+                    "Nenhuma credencial de certificação foi emitida."
+                ),
+                "violations": _extract_violations(results_graph),
+            },
+        )
+
+    legal_status, quality_status = _decidir_status(row["productType"])
 
     now = int(time.time())
     exp = now + CREDENTIAL_VALIDITY_SECONDS
@@ -333,30 +492,26 @@ async def credential_endpoint(request: Request):
         "iat": now,
         "exp": exp,
         # `batchNumber`: vínculo entre esta credencial de CERTIFICAÇÃO e o
-        # lote ORIGINAL emitido por coop-a. M4: agora é o próprio valor
-        # usado para consultar o Fuseki (batch_number acima), não mais um
-        # literal hardcoded independente — mas o efeito observável é o
-        # mesmo valor de M3 ("MS-2026-042" por default). Sempre visível pela
-        # mesma razão de M3: é o dado que permite cruzar lote + certificação
+        # lote ORIGINAL emitido por coop-a/coop-b. Sempre visível pela mesma
+        # razão de sempre: é o dado que permite cruzar lote + certificação
         # sem negociar disclosure nenhuma.
         "batchNumber": batch_number,
-        # `legalStatus`: M4 REAL — vem de agritrust:legalStatus no laudo
-        # (ver query acima), não mais hardcoded. Sempre visível pela mesma
-        # razão de M3 (decisão binária final de comercialização).
-        "legalStatus": row["legalStatus"],
+        # `legalStatus`: agora DERIVADO do resultado do SHACL regulatório
+        # (ver _decidir_status), não mais lido de um literal do grafo.
+        # Sempre visível pela mesma razão de sempre (decisão binária final
+        # de comercialização).
+        "legalStatus": legal_status,
     }
 
     # --- Disclosable (cada SDObj vira uma Disclosure própria) ---
 
-    # SEM `certificateType`/`certificateNumber`: não há dado real no grafo
-    # do certifier (o laudo só modela as medições sobre o lote). Ausentes
-    # até M5.5 — ver docs/notas-arquitetura/certifier-claims-hardcoded-m4.md.
+    # SEM `certificateType`/`certificateNumber`: não há dado real (nem no
+    # lab, nem em coop-a/coop-b) que corresponda a esses dois campos.
+    # Ausentes até M5.5 — ver docs/notas-arquitetura/certifier-claims-hardcoded-m4.md.
 
-    # Parâmetros físico-químicos: M4 REAL — cada um só entra se a query
-    # retornou valor (blocos OPTIONAL da query), mesma cautela de coop-a
-    # contra claims disclosable com valor None. `diastaseActivity` migra
-    # para SPARQL real aqui (diferente de coop-a/coop-b): o laudo do
-    # certifier de fato mede esse parâmetro.
+    # Parâmetros físico-químicos: agora vindos do lab (via federação), não
+    # mais de fixture local. Cada um só entra se a query retornou valor
+    # (mesma cautela de sempre contra claims disclosable com valor None).
     if row["moisture"] is not None:
         user_claims[SDObj("moistureContent")] = row["moisture"]
     if row["hmf"] is not None:
@@ -370,15 +525,15 @@ async def credential_endpoint(request: Request):
     # pelo produtor na colheita, não confirmado pelo laboratório) — ver
     # docstring do módulo.
 
-    # Status de qualidade: M4 REAL — de agritrust:qualityStatus no laudo.
-    # Disclosable, ao contrário de `legalStatus` (sempre visível) — mesma
-    # distinção binário-vs-detalhe de M3.
-    if row["qualityStatus"] is not None:
-        user_claims[SDObj("qualityStatus")] = row["qualityStatus"]
+    # Status de qualidade: agora DERIVADO (ver _decidir_status), não mais
+    # lido de um literal do grafo. Disclosable, ao contrário de
+    # `legalStatus` (sempre visível) — mesma distinção binário-vs-detalhe
+    # de sempre.
+    user_claims[SDObj("qualityStatus")] = quality_status
 
     # SEM `analysisActivity` nem `certificateReference`: sem modelagem
-    # PROV-O da atividade de análise / sem certificado real gravado no
-    # Fuseki, ficam ausentes até M5.5 (mesma decisão aplicada ao
+    # PROV-O da atividade de análise / sem certificado real gravado em
+    # nenhum Fuseki, ficam ausentes até M5.5 (mesma decisão aplicada ao
     # `certificateReference` do coop-a).
 
     # --- 5. Monta e assina o SD-JWT ---

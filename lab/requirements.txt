@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+rdflib
+pyshacl
+requests
+
+# lab NÃO emite credencial nem decodifica JWT — sem sd-jwt, pyjwt ou
+# base58 (essas dependências são exclusivas de coop-a/coop-b/certifier,
+# que fazem parte do fluxo OID4VCI). Ver lab/main.py.
