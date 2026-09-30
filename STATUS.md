@@ -13,6 +13,11 @@ ainda não confirmado, está marcado como tal, não como concluído.
 `coop-a`, `coop-b`, `certifier`: mesmo padrão estrutural (FastAPI + Fuseki
 + pipeline SHACL → SPARQL Update), todos com:
 
+`lab`: 5º nó real (FastAPI + Fuseki próprio, `POST /analise` — gate SHACL de
+forma + persistência), consultado pelo `certifier` via SPARQL federado
+(`SERVICE`). Não segue a lista M1-M4 abaixo (não emite VC nem faz OID4VCI —
+escopo próprio, ver `CLAUDE.md`).
+
 - M1 — metadata endpoint (`/.well-known/openid-credential-issuer`)
 - M1.5 — gate SHACL antes da inserção no Fuseki
 - M2 — `/token` (pre-authorized_code flow)
@@ -67,8 +72,19 @@ da resposta agregada — `200` confirmado com o mesmo lote.
 - Fora de escopo por decisão: verificação de assinatura de credencial (fica
   para M7/OID4VP — `docs/notas-arquitetura/m5-verificacao-assinatura-adiada.md`).
 
+## Suíte de testes BDD (`tests/`)
+
+13 cenários passando (`tests/features/*.feature`, `pytest tests/`), zero
+falha. 3 cenários adicionais marcados `@futuro` (deselecionados por
+padrão via `pytest.ini`).
+
 ## Fora do escopo até agora (roadmap futuro, ver CLAUDE.md)
 
-M5.5 (registro de produtor/rotação de chaves + PROV-O de certificação), M6-M8
-(revogação, SPARQL federado — já parcialmente antecipado em M9.5,
-blockchain/Besu/`AssetRegistry.sol`), M10-M11 não iniciados.
+M5.5 (registro de produtor/rotação de chaves + PROV-O de certificação), M6-M7
+(revogação, SPARQL federado — já parcialmente antecipado em M9.5),
+M10-M11 não iniciados.
+
+**M8 (ancoragem blockchain)**: setup feito (canal `"mel-trust"` criado
+on-chain, 3 contas adicionadas como membros — ver `CHANGELOG.md`);
+integração de ancoragem (`AssetRegistry.sol` via `web3.py`, chamada real a
+partir de `certifier`/`verifier-demo`) ainda pendente.

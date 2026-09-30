@@ -337,3 +337,13 @@ essa interface. Canal `"mel-trust"` criado on-chain com sucesso (tx
 admin `0xf39Fd6...2266` com `CHANNEL_AUTHORITY_ROLE` e
 `CHANNEL_ADMIN_ROLE` confirmados via `hasRole()`. Detalhes e o que falta:
 `docs/notas-arquitetura/m8-ancoragem-blockchain.md`.
+
+## Holder da VC de certificação — certifier ganha pre_authorized_code por lote
+
+`certifier` ganha `pre_authorized_code` por lote
+(`POST /lote/{batch_number}/pre-authorized-code`, GET trocado por POST na
+mesma entrega — efeito colateral não deveria ser GET), gerado só após
+consulta federada + SHACL regulatório aprovar o lote. Cobertura E2E
+confirmada com mel nativo + meliponário + licença ambiental. `known-issues.md`
+atualizado com 2 pendências conscientes: bypass legado do certifier sem
+uso único, e ausência de autenticação inter-nó no novo endpoint.
