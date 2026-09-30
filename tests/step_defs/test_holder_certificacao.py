@@ -2,7 +2,7 @@
 Step defs (pytest-bdd) para tests/features/holder_certificacao.feature.
 
 GREEN (pós-implementação): certifier agora tem
-GET /lote/{batch_number}/pre-authorized-code (pre_authorized_code_endpoint.py),
+POST /lote/{batch_number}/pre-authorized-code (pre_authorized_code_endpoint.py),
 que roda a MESMA consulta federada + SHACL regulatório de
 credential_endpoint.py e, se conforms=True, gera um código único/de uso
 único vinculado ao lote (certifier/pre_auth_codes.py). token_endpoint.py do
@@ -10,7 +10,7 @@ certifier agora aceita esse código dinâmico (mesma lógica já usada em
 coop-a/coop-b), além do código fixo legado (bypass, mantido).
 
 Fluxo do cenário: lab analisa (POST /analise) -> coop-a busca o código do
-lote (GET /lote/{batch}/pre-authorized-code) -> troca por access_token
+lote (POST /lote/{batch}/pre-authorized-code) -> troca por access_token
 (POST /token) -> emite a VC de certificação (POST /credential) usando esse
 token -> a VC retornada é o que a coop-a guardaria no dossiê do lote.
 """
@@ -94,7 +94,7 @@ def coop_a_usa_pre_authorized_code_do_lote(context):
     # 1. Busca o código pre_authorized_code ESPECÍFICO deste lote — só
     # existe porque o certifier já rodou a consulta federada + SHACL
     # regulatório e confirmou conforms=True (mesma decisão de /credential).
-    lookup_resp = requests.get(
+    lookup_resp = requests.post(
         f"{CERTIFIER_URL}/lote/{batch_number}/pre-authorized-code",
         timeout=10,
     )

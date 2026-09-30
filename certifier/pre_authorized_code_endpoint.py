@@ -1,5 +1,5 @@
 """
-GET /lote/{batch_number}/pre-authorized-code — fecha o gap descrito em
+POST /lote/{batch_number}/pre-authorized-code — fecha o gap descrito em
 tests/features/holder_certificacao.feature: antes desta entrega, o
 certifier só tinha um pre_authorized_code FIXO/genérico
 (config.PRE_AUTHORIZED_CODE), igual pra qualquer lote — sem amarração entre
@@ -12,6 +12,10 @@ diretamente `_query_federated`/`_monta_grafo_efemero`/`_run_regulatory_shacl`/
 `_extract_violations` de lá. Se algum dia essa lógica mudar (nova shape,
 novo campo federado), este endpoint muda junto automaticamente — não há
 uma segunda cópia pra esquecer de atualizar.
+
+Método POST, não GET: esta chamada tem efeito colateral real (gera e
+armazena um código novo no store em memória) — GET deveria ser
+seguro/idempotente por convenção REST, o que não é o caso aqui.
 
 Contrato:
 - 200: lote aprovado (conforms=True) — gera e retorna um
@@ -41,7 +45,7 @@ from pre_auth_codes import generate_for_batch
 router = APIRouter()
 
 
-@router.get("/lote/{batch_number}/pre-authorized-code")
+@router.post("/lote/{batch_number}/pre-authorized-code")
 async def pre_authorized_code_endpoint(batch_number: str):
     try:
         row = _query_federated(batch_number)

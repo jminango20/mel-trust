@@ -26,10 +26,11 @@ realmente implementa e valida via `CREDENTIAL_CONFIGURATION_ID`.
 Escopo M5: DID Document (GET /.well-known/did.json) — ver did_endpoint.py.
 Mesmo mecanismo de coop-a/coop-b.
 
-Escopo M9 (holder da certificação): GET /lote/{batch_number}/pre-authorized-code
+Escopo M9 (holder da certificação): POST /lote/{batch_number}/pre-authorized-code
 — ver pre_authorized_code_endpoint.py. Fecha o gap de código fixo/genérico
 sem amarração a lote (ver docstring lá e
-tests/features/holder_certificacao.feature).
+tests/features/holder_certificacao.feature). Método POST (não GET): tem
+efeito colateral real, não é seguro/idempotente.
 """
 from fastapi import FastAPI
 
