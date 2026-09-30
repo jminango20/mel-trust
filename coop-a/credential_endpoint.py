@@ -107,8 +107,15 @@ PREFIX geo: <http://www.opengis.net/ont/geosparql#>
 """
 
 # Query SELECT que busca, a partir de um agritrust:batchNumber, tudo que a
-# Parte 4 precisa para montar os claims da credencial. Comentários por
-# campo (POR QUÊ cada um está aqui, não só o quê):
+# Parte 4 precisa para montar os claims da credencial. LISTA EXPLÍCITA E
+# FIXA de campos — não "o que existir no Fuseki" (ver
+# tests/features/coop_a_claims_isolados.feature e docs/known-issues.md):
+# `moistureContent`/`hmfContent`/`acidityContent`/`diastaseActivity`/
+# `legalStatus`/`qualityStatus` NUNCA são buscados aqui, NUNCA viram claim
+# desta credencial, mesmo que a tripla exista no grafo do lote (medição é
+# domínio do certifier — ver certifier/credential_endpoint.py — não do
+# produtor). Comentários por campo (POR QUÊ cada um está aqui, não só o
+# quê):
 #
 # - ?batch / ?productType: `?batch a ?productType` NÃO é OPTIONAL nem tem
 #   FILTER adicional porque, na instância atual, o recurso do lote
@@ -118,19 +125,12 @@ PREFIX geo: <http://www.opengis.net/ont/geosparql#>
 #   esta query pegaria qualquer um deles arbitrariamente — não é um
 #   problema hoje porque `inference="none"` no pipeline SHACL (M1.5) não
 #   materializa hierarquia de classes na instância.
-# - ?moisture / ?hmf / ?acidity: cada um em seu próprio OPTIONAL porque nem
-#   todo lote necessariamente tem os três parâmetros laboratoriais
-#   preenchidos — um lote incompleto não deve fazer a query inteira falhar
-#   em retornar zero linhas. (hasDiastaseActivity não é buscado aqui: não é
-#   um claim que M3 definiu para a credencial de lote — buscar um campo que
-#   nunca vira claim seria código morto.)
 # - ?floralOrigin: origem floral é dado DECLARADO PELO PRODUTOR na colheita
 #   (:hasFloralOrigin no próprio recurso do lote, não no laudo do
 #   certifier) — no caso de uso canônico do Ivan, o apicultor relata a
 #   origem floral por voz durante a colheita; o laboratório nunca confirma
-#   isso. Por isso mora aqui (coop-a), não no certifier. OPTIONAL pela
-#   mesma razão dos três campos acima: nem todo lote tem a origem
-#   declarada.
+#   isso. Por isso mora aqui (coop-a), não no certifier. OPTIONAL porque
+#   nem todo lote tem a origem declarada.
 # - ?producer: obrigatório (não OPTIONAL) via agritrust:ownedBy, porque um
 #   lote sem produtor dono seria um dado de domínio incompleto — se isso
 #   acontecer, preferimos que a query não devolva parte dos claims de forma
@@ -149,16 +149,19 @@ PREFIX geo: <http://www.opengis.net/ont/geosparql#>
 #   sentido buscar o rótulo do geo:Feature SE a cadeia geométrica inteira
 #   existir. Um produtor sem localização cadastrada não deve gerar linhas
 #   "meio nulas" a mais na tabela de resultado.
+# - ?meliponaryId / ?environmentalLicenseNumber: meliponário do MESMO
+#   produtor (agritrust:ownedBy), não do lote — mesma modelagem de
+#   coop-a/lote_endpoint.py (ver tests/features/lote_meliponary.feature).
+#   Bloco aninhado (licença só é buscada SE o meliponário existir), mesma
+#   razão do bloco de geo acima.
 _CLAIMS_QUERY_TEMPLATE = _SPARQL_PREFIXES + """
-SELECT ?productType ?moisture ?hmf ?acidity ?floralOrigin
+SELECT ?productType ?floralOrigin
        ?producerLabel ?producerFoafName ?producerDID ?geoWKT ?geoLabel
+       ?meliponaryId ?environmentalLicenseNumber
 WHERE {
   ?batch agritrust:batchNumber %(batch_number)s ;
          a ?productType ;
          agritrust:ownedBy ?producer .
-  OPTIONAL { ?batch :hasMoistureContent ?moisture }
-  OPTIONAL { ?batch :hasHMFContent ?hmf }
-  OPTIONAL { ?batch :hasAcidity ?acidity }
   OPTIONAL { ?batch :hasFloralOrigin ?floralOrigin }
   OPTIONAL { ?producer rdfs:label ?producerLabel }
   OPTIONAL { ?producer foaf:name ?producerFoafName }
@@ -168,6 +171,15 @@ WHERE {
     ?geoFeature geo:hasGeometry ?geom .
     ?geom geo:asWKT ?geoWKT .
     OPTIONAL { ?geoFeature rdfs:label ?geoLabel }
+  }
+  OPTIONAL {
+    ?meliponary a :Meliponary ;
+                agritrust:ownedBy ?producer ;
+                agritrust:hasIdentifier ?meliponaryId .
+    OPTIONAL {
+      ?meliponary :hasEnvironmentalLicense ?license .
+      ?license :environmentalLicenseNumber ?environmentalLicenseNumber .
+    }
   }
 }
 LIMIT 1
@@ -237,15 +249,14 @@ def query_batch_claims(batch_number: str) -> dict | None:
 
     return {
         "productType": _val("productType"),
-        "moisture": _val("moisture"),
-        "hmf": _val("hmf"),
-        "acidity": _val("acidity"),
         "floralOrigin": _val("floralOrigin"),
         "producerLabel": _val("producerLabel"),
         "producerFoafName": _val("producerFoafName"),
         "producerDID": _val("producerDID"),
         "geoWKT": _val("geoWKT"),
         "geoLabel": _val("geoLabel"),
+        "meliponaryId": _val("meliponaryId"),
+        "environmentalLicenseNumber": _val("environmentalLicenseNumber"),
     }
 
 
@@ -489,34 +500,27 @@ async def credential_endpoint(request: Request):
     if apiary_location is not None:
         user_claims[SDObj("apiaryLocation")] = apiary_location
 
-    # Dados de laboratório: TRÊS disclosures separadas (uma por
-    # sub-campo), não um objeto único "labResults" com uma única
-    # Disclosure. Justificativa: minimização de dados por campo real —
-    # um verificador que só precisa confirmar conformidade de umidade
-    # (ex.: gate SHACL do certifier, que já valida limite de umidade por
-    # espécie conforme CLAUDE.md/validation-shapes.ttl) não deveria
-    # precisar obrigar a revelação de HMF e acidez juntos só porque
-    # estavam agrupados em um único objeto disclosable. Separar por
-    # sub-campo é o uso mais literal do propósito do SD-JWT: cada fato
-    # discreto é seu próprio Disclosure, disclosable independentemente.
-    #
-    # M4: cada um só entra em user_claims se a query retornou valor (ver
-    # OPTIONAL de cada um na query) — um lote sem, por exemplo,
-    # hasHMFContent preenchido não deveria gerar um claim "hmfContent": None
-    # disclosável, que não corresponde a um fato real do lote.
-    if row["moisture"] is not None:
-        user_claims[SDObj("moistureContent")] = row["moisture"]
-    if row["hmf"] is not None:
-        user_claims[SDObj("hmfContent")] = row["hmf"]
-    if row["acidity"] is not None:
-        user_claims[SDObj("acidityContent")] = row["acidity"]
+    # SEM moistureContent/hmfContent/acidityContent/diastaseActivity/
+    # legalStatus/qualityStatus: NUNCA são claims desta credencial, mesmo
+    # que a tripla exista no Fuseki do coop-a (medição é domínio do
+    # certifier, não do produtor) — ver tests/features/coop_a_claims_isolados.feature
+    # e docstring da query acima. Removido de propósito, não esquecido.
 
     # Origem floral: dado DECLARADO PELO PRODUTOR (:hasFloralOrigin no
     # recurso do lote), não confirmado por laboratório — ver justificativa
-    # na query acima. Disclosable pela mesma razão dos outros campos de
-    # laudo: nem toda apresentação precisa revelar a origem floral.
+    # na query acima. Disclosable pela mesma razão dos outros campos:
+    # nem toda apresentação precisa revelar a origem floral.
     if row["floralOrigin"] is not None:
         user_claims[SDObj("floralOrigin")] = row["floralOrigin"]
+
+    # Meliponário do produtor (se houver): mesma separação granular de
+    # sempre — meliponaryId e environmentalLicenseNumber como disclosures
+    # independentes, não um objeto único (um verificador pode precisar só
+    # confirmar que existe meliponário identificado, sem a licença).
+    if row["meliponaryId"] is not None:
+        user_claims[SDObj("meliponaryId")] = row["meliponaryId"]
+    if row["environmentalLicenseNumber"] is not None:
+        user_claims[SDObj("environmentalLicenseNumber")] = row["environmentalLicenseNumber"]
 
     # Identidade do produtor: NOME e DID como disclosures SEPARADAS, não
     # agrupadas em um objeto "producer" único. Justificativa: são usos

@@ -97,26 +97,25 @@ PREFIX geo: <http://www.opengis.net/ont/geosparql#>
 """
 
 # Query SELECT que busca, a partir de um agritrust:batchNumber, tudo que a
-# Parte 4 precisa para montar os claims da credencial. MESMA estrutura da
-# query de coop-a (ver comentários por campo lá) — repetida aqui porque o
-# schema de coop-b usa exatamente as mesmas propriedades:
+# Parte 4 precisa para montar os claims da credencial. LISTA EXPLÍCITA E
+# FIXA de campos — mesma decisão de coop-a (ver docstring lá e
+# tests/features/coop_a_claims_isolados.feature):
+# `moistureContent`/`hmfContent`/`acidityContent`/`diastaseActivity`/
+# `legalStatus`/`qualityStatus` NUNCA são buscados nem viram claim desta
+# credencial, mesmo que a tripla exista no grafo do lote. MESMA estrutura
+# da query de coop-a (ver comentários por campo lá) — repetida aqui porque
+# o schema de coop-b usa exatamente as mesmas propriedades:
 #
 # - ?batch / ?productType: `?batch a ?productType` não é OPTIONAL pela mesma
 #   razão de coop-a — o lote (:Lote_Mel_Jatai_2026_007) tem um único
 #   rdf:type assertado (:HoneyNativeStinglessBee), sem ambiguidade a
 #   resolver, e inference="none" no pipeline SHACL (M1.5) não materializa
 #   hierarquia de classes.
-# - ?moisture / ?hmf / ?acidity: cada um em seu próprio OPTIONAL — mesma
-#   razão de coop-a (nem todo lote necessariamente tem os três parâmetros
-#   preenchidos). `:hasDiastaseActivity` continua fora da query: não é um
-#   claim que M3 definiu para a credencial de LOTE de coop-b (mel nativo não
-#   tem esse parâmetro medido na instância) — buscar um campo que nunca vira
-#   claim seria código morto, mesma decisão de coop-a.
 # - ?floralOrigin: origem floral é dado DECLARADO PELO PRODUTOR na colheita
 #   (:hasFloralOrigin no próprio recurso do lote, não no laudo do
 #   certifier) — mesma migração já feita em coop-a/credential_endpoint.py
-#   (ver CHANGELOG.md, "Ajuste pós-demo"). OPTIONAL pela mesma razão dos
-#   três campos acima.
+#   (ver CHANGELOG.md, "Ajuste pós-demo"). OPTIONAL porque nem todo lote
+#   tem a origem declarada.
 # - ?producer: obrigatório via agritrust:ownedBy, mesma razão de coop-a (um
 #   lote sem produtor dono seria dado de domínio incompleto).
 # - ?producerLabel / ?producerFoafName / ?producerDID: mesma estrutura de
@@ -128,16 +127,18 @@ PREFIX geo: <http://www.opengis.net/ont/geosparql#>
 #   coop-a/data/sample-instance.ttl e agora também presente em
 #   coop-b/data/sample-instance.ttl (:Meliponario_Jatai_Cerrado_Geo, ligada
 #   via :Apicultor_Joao_Cerrado agritrust:hasOperatingLocation).
+# - ?meliponaryId / ?environmentalLicenseNumber: meliponário do MESMO
+#   produtor, mesma modelagem de coop-a (ver docstring lá e
+#   tests/features/lote_meliponary.feature) — especialmente relevante aqui,
+#   já que coop-b é a cooperativa que lida com mel nativo/meliponicultura.
 _CLAIMS_QUERY_TEMPLATE = _SPARQL_PREFIXES + """
-SELECT ?productType ?moisture ?hmf ?acidity ?floralOrigin
+SELECT ?productType ?floralOrigin
        ?producerLabel ?producerFoafName ?producerDID ?geoWKT ?geoLabel
+       ?meliponaryId ?environmentalLicenseNumber
 WHERE {
   ?batch agritrust:batchNumber %(batch_number)s ;
          a ?productType ;
          agritrust:ownedBy ?producer .
-  OPTIONAL { ?batch :hasMoistureContent ?moisture }
-  OPTIONAL { ?batch :hasHMFContent ?hmf }
-  OPTIONAL { ?batch :hasAcidity ?acidity }
   OPTIONAL { ?batch :hasFloralOrigin ?floralOrigin }
   OPTIONAL { ?producer rdfs:label ?producerLabel }
   OPTIONAL { ?producer foaf:name ?producerFoafName }
@@ -147,6 +148,15 @@ WHERE {
     ?geoFeature geo:hasGeometry ?geom .
     ?geom geo:asWKT ?geoWKT .
     OPTIONAL { ?geoFeature rdfs:label ?geoLabel }
+  }
+  OPTIONAL {
+    ?meliponary a :Meliponary ;
+                agritrust:ownedBy ?producer ;
+                agritrust:hasIdentifier ?meliponaryId .
+    OPTIONAL {
+      ?meliponary :hasEnvironmentalLicense ?license .
+      ?license :environmentalLicenseNumber ?environmentalLicenseNumber .
+    }
   }
 }
 LIMIT 1
@@ -206,15 +216,14 @@ def query_batch_claims(batch_number: str) -> dict | None:
 
     return {
         "productType": _val("productType"),
-        "moisture": _val("moisture"),
-        "hmf": _val("hmf"),
-        "acidity": _val("acidity"),
         "floralOrigin": _val("floralOrigin"),
         "producerLabel": _val("producerLabel"),
         "producerFoafName": _val("producerFoafName"),
         "producerDID": _val("producerDID"),
         "geoWKT": _val("geoWKT"),
         "geoLabel": _val("geoLabel"),
+        "meliponaryId": _val("meliponaryId"),
+        "environmentalLicenseNumber": _val("environmentalLicenseNumber"),
     }
 
 
@@ -393,22 +402,24 @@ async def credential_endpoint(request: Request):
     if apiary_location is not None:
         user_claims[SDObj("apiaryLocation")] = apiary_location
 
-    # Dados de laboratório: três disclosures separadas, mesma justificativa
-    # de minimização granular por sub-campo de coop-a. `diastaseActivity`
-    # continua FORA (mesmo motivo de M3: mel de meliponíneo não tem esse
-    # parâmetro na instância de coop-b, e M3 nunca definiu esse claim aqui).
-    if row["moisture"] is not None:
-        user_claims[SDObj("moistureContent")] = row["moisture"]
-    if row["hmf"] is not None:
-        user_claims[SDObj("hmfContent")] = row["hmf"]
-    if row["acidity"] is not None:
-        user_claims[SDObj("acidityContent")] = row["acidity"]
+    # SEM moistureContent/hmfContent/acidityContent/diastaseActivity/
+    # legalStatus/qualityStatus: NUNCA são claims desta credencial, mesma
+    # decisão de coop-a — ver docstring da query acima e
+    # tests/features/coop_a_claims_isolados.feature. Removido de propósito.
 
     # Origem floral: dado DECLARADO PELO PRODUTOR (:hasFloralOrigin no
     # recurso do lote), não confirmado por laboratório — mesma migração de
-    # coop-a. Disclosable pela mesma razão dos outros campos de laudo.
+    # coop-a. Disclosable pela mesma razão dos outros campos.
     if row["floralOrigin"] is not None:
         user_claims[SDObj("floralOrigin")] = row["floralOrigin"]
+
+    # Meliponário do produtor (se houver): mesma separação granular de
+    # coop-a — meliponaryId e environmentalLicenseNumber como disclosures
+    # independentes.
+    if row["meliponaryId"] is not None:
+        user_claims[SDObj("meliponaryId")] = row["meliponaryId"]
+    if row["environmentalLicenseNumber"] is not None:
+        user_claims[SDObj("environmentalLicenseNumber")] = row["environmentalLicenseNumber"]
 
     # Identidade do produtor: nome e DID como disclosures separadas, mesma
     # justificativa de coop-a (consumidores diferentes precisam de partes
