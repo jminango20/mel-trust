@@ -5,6 +5,13 @@ rdflib
 pyshacl
 requests
 
+# M8: ancoragem on-chain de POST /lote (ver anchoring.py). Mesmo pacote
+# usado em scripts/blockchain/ para falar com a rede Semear (Besu) via
+# web3.py. Sem pin de versão aqui, igual scripts/blockchain/requirements.txt
+# — instalado 8.0.0 nesta rodada (mesma versão já usada no venv do
+# certifier).
+web3
+
 # M3: emissão de SD-JWT VC (POST /credential).
 # Pacote no PyPI é `sd-jwt` (import `sd_jwt`) — implementação de referência
 # do draft-ietf-oauth-selective-disclosure-jwt, mantida sob o org

@@ -50,6 +50,7 @@ recurso de produtor para o mesmo DID. Só se não existir nenhum é que uma
 URI nova é gerada deterministicamente a partir do `producerDID`
 (`_slug`), do mesmo jeito que antes.
 """
+import logging
 import re
 import uuid
 
@@ -58,10 +59,14 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import FOAF, RDF, XSD
+from web3 import Web3
 
+from anchoring import anchor_batch
 from config import FUSEKI_ADMIN_PASSWORD, FUSEKI_ADMIN_USER, FUSEKI_URL
 from pre_auth_codes import generate_for_batch, reissue_for_batch
 from shacl_pipeline import extract_violations, format_violations, insert_into_fuseki, run_shacl
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -366,13 +371,49 @@ async def cadastrar_lote(request: Request):
     # chave, então sem ele não há como gerar/rastrear um código associável.
     pre_authorized_code = generate_for_batch(batch_number) if batch_number is not None else None
 
-    return {
+    # --- 5. Ancoragem on-chain (M8) — melhor esforço, NUNCA reverte a
+    # inserção no Fuseki (já commitada no passo 3 acima) nem quebra esta
+    # resposta HTTP: sucesso ou falha só mudam `anchoringStatus`/campos
+    # associados, sempre presentes explicitamente (decisão do usuário — ver
+    # tests/features/ancoragem_lote.feature e
+    # docs/referencia-contratos/README.md seção 5). `dataHashes` usa o
+    # keccak256 do MESMO objeto `g` (rdflib.Graph) em memória, serializado
+    # como N-Triples — não uma nova consulta SPARQL ao Fuseki — para que o
+    # hash ancorado corresponda exatamente ao grafo que este endpoint acabou
+    # de montar e inserir, sem depender de como o triplestore normaliza/
+    # reordena triplas internamente.
+    anchoring_status = "anchoring_skipped"
+    tx_hash = None
+    anchoring_error = None
+    if batch_number is not None:
+        data_hash = Web3.keccak(g.serialize(format="nt").encode("utf-8"))
+        nature_id = product_type or ""
+        success, tx_hash, anchoring_error = anchor_batch(batch_number, nature_id, data_hash)
+        if success:
+            anchoring_status = "anchored"
+            logger.info("POST /lote: lote %r ancorado on-chain, txHash=%s", batch_number, tx_hash)
+        else:
+            anchoring_status = "anchoring_failed"
+            logger.error("POST /lote: falha ao ancorar lote %r on-chain: %s", batch_number, anchoring_error)
+    else:
+        # Sem batchNumber não há newAssetIds determinístico nem processo
+        # aplicável a ancorar (ver docstring acima sobre o caso de borda
+        # productType também ausente) — não tenta ancorar.
+        logger.info("POST /lote: lote sem batchNumber, ancoragem on-chain pulada (anchoringStatus=anchoring_skipped).")
+
+    response_body = {
         "status": "inserted",
         "batchNumber": batch_number,
         "lote": str(lote_uri),
         "producer": str(producer_uri) if producer_uri is not None else None,
         "pre_authorized_code": pre_authorized_code,
+        "anchoringStatus": anchoring_status,
     }
+    if tx_hash is not None:
+        response_body["txHash"] = tx_hash
+    if anchoring_error is not None:
+        response_body["anchoringError"] = anchoring_error
+    return response_body
 
 
 @router.post("/lote/{batch_number}/reemitir-codigo")

@@ -5,6 +5,10 @@ rdflib
 pyshacl
 requests
 
+# M8: ancoragem on-chain de POST /lote (ver anchoring.py). Réplica exata de
+# coop-a/requirements.txt — ver comentário lá.
+web3
+
 # M3: emissão de SD-JWT VC (POST /credential).
 # Pacote no PyPI é `sd-jwt` (import `sd_jwt`) — implementação de referência
 # do draft-ietf-oauth-selective-disclosure-jwt. Traz `jwcrypto` (e,
