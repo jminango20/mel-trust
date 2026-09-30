@@ -17,3 +17,9 @@ sd-jwt
 # credential_endpoint.py) o JWT de key proof enviado pelo holder no corpo
 # de POST /credential.
 pyjwt
+
+# M9: ancoragem on-chain da VC de certificação (certifier/anchoring.py) via
+# TransactionOrchestrator.submitTransaction na rede Semear (Besu privado,
+# chain ID 648). Mesmo pacote já usado em lab/requirements.txt e
+# coop-a/requirements.txt para o mesmo propósito.
+web3

@@ -77,6 +77,7 @@ possível ainda, nem no lab nem em coop-a/coop-b): `certificateType`,
 (startedAtTime/endedAtTime/executedBy) e `certificateReference`. Migração
 prevista pra M5.5. Ver docs/notas-arquitetura/certifier-claims-hardcoded-m4.md.
 """
+import logging
 import os
 import time
 
@@ -90,7 +91,9 @@ from rdflib import RDF, Graph, Literal, Namespace, URIRef
 from rdflib.namespace import XSD
 from sd_jwt.common import SDObj
 from sd_jwt.issuer import SDJWTIssuer
+from web3 import Web3
 
+from anchoring import anchor_certification
 from config import (
     COOP_A_SPARQL_SERVICE_URL,
     COOP_B_SPARQL_SERVICE_URL,
@@ -107,6 +110,8 @@ from nonce_endpoint import is_valid_c_nonce
 from token_endpoint import is_valid_access_token
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 # Deve bater com a chave usada em
 # main.py:credential_configurations_supported (M1, corrigido nesta entrega —
@@ -485,6 +490,15 @@ async def credential_endpoint(request: Request):
 
     legal_status, quality_status = _decidir_status(row["productType"])
 
+    # `natureId` para a ancoragem on-chain (Passo 6 abaixo): productType
+    # vem da query federada como URI completa
+    # (https://w3id.org/.../bee-extension#HoneyApis) — mesma extração de
+    # nome local já usada em `_decidir_status` acima e em
+    # `lab/analise_endpoint.py:_resolve_product_type`, para casar com o
+    # `natureId` ("HoneyApis"/"HoneyNativeStinglessBee") registrado no
+    # ProcessRegistry (honey-certification-document).
+    nature_id = row["productType"].rsplit("#", 1)[-1].rsplit("/", 1)[-1]
+
     now = int(time.time())
     exp = now + CREDENTIAL_VALIDITY_SECONDS
 
@@ -551,4 +565,57 @@ async def credential_endpoint(request: Request):
         extra_header_parameters={"typ": SD_JWT_TYP},
     )
 
-    return {"credential": sdjwt.sd_jwt_issuance}
+    # --- 6. Ancoragem on-chain da VC de certificação (M9) — melhor
+    # esforço, NUNCA reverte a emissão da VC (já montada/assinada acima)
+    # nem quebra esta resposta HTTP: sucesso ou falha só mudam
+    # `anchoringStatus`/campos associados, sempre presentes explicitamente
+    # (mesma decisão do usuário já aplicada em coop-a/coop-b/lab, ver
+    # tests/features/ancoragem_certificacao.feature).
+    #
+    # Ancora via o processo NOVO `honey-certification-document`/`issuance`
+    # (action=CREATE_DOCUMENT=9), NÃO o antigo `honey-certification`
+    # (action=CREATE_ASSET=0) — ver certifier/anchoring.py e
+    # docs/referencia-contratos/README.md seção 4 para a justificativa
+    # completa.
+    #
+    # `dataHashes` usa o keccak256 do SD-JWT COMPLETO já serializado
+    # (`sdjwt.sd_jwt_issuance`) — o mesmo artefato final entregue ao holder
+    # nesta mesma resposta, não um subconjunto de claims.
+    anchoring_status = "anchoring_skipped"
+    tx_hash = None
+    anchoring_error = None
+    try:
+        data_hash = Web3.keccak(text=sdjwt.sd_jwt_issuance)
+        success, tx_hash, anchoring_error = anchor_certification(
+            batch_number, nature_id, data_hash
+        )
+        if success:
+            anchoring_status = "anchored"
+            logger.info(
+                "POST /credential: VC de certificação do lote %r ancorada on-chain, txHash=%s",
+                batch_number, tx_hash,
+            )
+        else:
+            anchoring_status = "anchoring_failed"
+            logger.error(
+                "POST /credential: falha ao ancorar VC de certificação do lote %r on-chain: %s",
+                batch_number, anchoring_error,
+            )
+    except Exception as exc:  # noqa: BLE001 - VC já emitida, nunca quebra a resposta HTTP
+        anchoring_status = "anchoring_failed"
+        anchoring_error = f"{type(exc).__name__}: {exc}"
+        logger.error(
+            "POST /credential: erro inesperado ao tentar ancorar VC de certificação do lote %r: %s",
+            batch_number, anchoring_error,
+        )
+
+    response_body = {
+        "credential": sdjwt.sd_jwt_issuance,
+        "anchoringStatus": anchoring_status,
+    }
+    if tx_hash is not None:
+        response_body["txHash"] = tx_hash
+    if anchoring_error is not None:
+        response_body["anchoringError"] = anchoring_error
+
+    return response_body
