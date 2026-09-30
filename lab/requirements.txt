@@ -12,3 +12,9 @@ requests
 # `requests` (usada por shacl_pipeline.py:insert_into_fuseki) foi removida
 # por um turno (lab virou stateless) e RESTAURADA — o lab voltou a ter
 # Fuseki próprio. Ver docs/known-issues.md/CHANGELOG.md.
+
+# M8/M9: ancoragem on-chain do laudo de análise (POST /analise, ver
+# anchoring.py) — mesmo pacote já usado em coop-a/coop-b/certifier para
+# falar com a rede Semear (Besu) via web3.py. Sem pin de versão, mesma
+# convenção do resto do projeto.
+web3

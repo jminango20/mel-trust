@@ -38,3 +38,27 @@ BASE_URL = os.environ.get("BASE_URL", "http://localhost:8005")
 FUSEKI_URL = os.environ.get("FUSEKI_URL", "http://127.0.0.1:3033/lab")
 FUSEKI_ADMIN_USER = os.environ.get("FUSEKI_ADMIN_USER", "admin")
 FUSEKI_ADMIN_PASSWORD = os.environ.get("FUSEKI_ADMIN_PASSWORD")
+
+# --- Federação SPARQL para resolver o productType do lote (ancoragem do
+# laudo, M8/M9) ---
+#
+# POST /analise só recebe `batchNumber` — não o `productType`
+# ("HoneyApis"/"HoneyNativeStinglessBee") — mas a ancoragem on-chain do
+# laudo (`anchoring.py`) precisa dele como `natureId` do
+# TransactionRequest, para casar com os processos `honey-lab-analysis`
+# já registrados no ProcessRegistry por natureId (ver
+# docs/referencia-contratos/README.md, seção 4).
+#
+# Mesmo padrão exato de `certifier/config.py`
+# (COOP_A_SPARQL_SERVICE_URL/COOP_B_SPARQL_SERVICE_URL): estas URLs são
+# resolvidas de DENTRO do container do Fuseki do LAB (que aqui atua como
+# nó de entrada da query federada, mesmo papel que o Fuseki do certifier
+# tem em credential_endpoint.py), via `host.docker.internal` — não
+# `127.0.0.1` (essa troca só vale para conexão HOST -> porta publicada,
+# contexto diferente de container -> host).
+COOP_A_SPARQL_SERVICE_URL = os.environ.get(
+    "COOP_A_SPARQL_SERVICE_URL", "http://host.docker.internal:3030/coop-a/sparql"
+)
+COOP_B_SPARQL_SERVICE_URL = os.environ.get(
+    "COOP_B_SPARQL_SERVICE_URL", "http://host.docker.internal:3031/coop-b/sparql"
+)
