@@ -13,14 +13,19 @@ token/erro). Nada de emissão de credencial aqui: esse endpoint só troca um
 código por um access_token opaco. O credential endpoint (M3) é quem vai
 exigir esse token no header Authorization para liberar a emissão.
 
-Duas simplificações deliberadas de MVP, comentadas também inline:
-1. O pre-authorized_code é um valor FIXO (config.PRE_AUTHORIZED_CODE), não
-   gerado dinamicamente por uma "credential offer" (não existe endpoint de
-   credential offer neste repo ainda). Não há consumo de uso único: o mesmo
-   código pode ser trocado por token repetidamente.
-2. O access_token emitido é armazenado em um dict em memória do processo
-   (_issued_tokens), não em Redis/DB/JWT assinado. Reinicia o processo,
-   perde todos os tokens emitidos — aceitável para MVP local.
+Simplificação deliberada de MVP: o access_token emitido é armazenado em um
+dict em memória do processo (_issued_tokens), não em Redis/DB/JWT assinado.
+Reinicia o processo, perde todos os tokens emitidos — aceitável para MVP
+local.
+
+Validação do pre-authorized_code (2 caminhos, ver pre_auth_codes.py):
+1. Código DINÂMICO, único por lote, gerado por POST /lote (pre_auth_codes.py)
+   — uso único: consumido (marcado `usado=True`) na primeira troca por
+   token; uma segunda tentativa com o MESMO código recebe `invalid_grant`.
+2. Código FIXO legado (config.PRE_AUTHORIZED_CODE) — bypass de dev/teste,
+   sempre aceito, nunca consumido. Necessário porque lotes inseridos fora de
+   POST /lote (fixture .ttl via pipeline.py, ex. MS-2026-042) nunca passam
+   pelo store dinâmico e não têm código próprio associado.
 
 Parsing do corpo da requisição: o grant do OAuth2 (RFC 6749 §4.5) exige
 Content-Type application/x-www-form-urlencoded. Em vez de usar
@@ -38,6 +43,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from config import ACCESS_TOKEN_TTL_SECONDS, PRE_AUTHORIZED_CODE
+from pre_auth_codes import get_entry, mark_used
 
 # Nome do grant type do pre-authorized_code flow, definido pela própria
 # spec OID4VCI como um URN OAuth2 (não é um valor inventado aqui).
@@ -95,12 +101,25 @@ async def token_endpoint(request: Request):
             f"Parâmetro obrigatório ausente: {PARAM_PRE_AUTHORIZED_CODE}",
         )
 
-    if pre_authorized_code != PRE_AUTHORIZED_CODE:
-        return _oauth_error(
-            400,
-            "invalid_grant",
-            "pre-authorized_code inválido ou não reconhecido.",
-        )
+    if pre_authorized_code == PRE_AUTHORIZED_CODE:
+        # Bypass fixo de dev/teste — ver docstring do módulo. Nunca marcado
+        # como usado, sempre aceito.
+        pass
+    else:
+        entry = get_entry(pre_authorized_code)
+        if entry is None:
+            return _oauth_error(
+                400,
+                "invalid_grant",
+                "pre-authorized_code inválido ou não reconhecido.",
+            )
+        if entry["usado"]:
+            return _oauth_error(
+                400,
+                "invalid_grant",
+                "pre-authorized_code já utilizado.",
+            )
+        mark_used(pre_authorized_code)
 
     access_token = str(uuid.uuid4())
     _issued_tokens[access_token] = {

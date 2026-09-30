@@ -8,3 +8,7 @@ requests
 # lab NÃO emite credencial nem decodifica JWT — sem sd-jwt, pyjwt ou
 # base58 (essas dependências são exclusivas de coop-a/coop-b/certifier,
 # que fazem parte do fluxo OID4VCI). Ver lab/main.py.
+#
+# `requests` (usada por shacl_pipeline.py:insert_into_fuseki) foi removida
+# por um turno (lab virou stateless) e RESTAURADA — o lab voltou a ter
+# Fuseki próprio. Ver docs/known-issues.md/CHANGELOG.md.

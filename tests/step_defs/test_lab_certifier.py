@@ -1,39 +1,21 @@
 """
 Step defs (pytest-bdd) para tests/features/lab_certifier.feature.
 
-FASE RED (TDD): escrito e rodado ANTES de lab/ existir e ANTES do certifier
-ser reestruturado para consultá-lo. As duas coisas testadas aqui NÃO
-existem ainda — os testes devem falhar agora, de propósito. Depois que
-lab/ for criado (node-scaffolder) e certifier/credential_endpoint.py for
-ajustado para puxar dados do lab via SPARQL federado + SHACL regulatório,
-rodar de novo até passar (GREEN).
-
-3 DECISÕES DE DESIGN feitas aqui, que NÃO estavam no texto original do
-usuário (documentadas para revisão, não escondidas):
-
-1. Porta do lab: 8005 (sequência já usada: coop-a 8001, coop-b 8002,
-   certifier 8003, verifier-demo 8004).
-2. Gatilho HTTP para "o certifier consulta o Fuseki do lab... e roda o
-   SHACL regulatório": reusa o `/credential` JÁ EXISTENTE do certifier (a
-   arquitetura descrita pelo usuário faz o pull do lab acontecer na hora de
-   emitir a credencial, não num endpoint novo dedicado).
-3. batchNumber do Cenário 2: o texto original não repete um número — usei
-   um lote DEDICADO ("MS-2026-042-LAB-REJEITADO"), diferente de MS-2026-042,
-   para não colidir com o dado legado já existente no Fuseki do certifier.
+HISTÓRICO: este arquivo chegou a ser reescrito pra uma arquitetura "lab
+stateless" (POST /avaliar no lab, coop-a persistindo o resultado via
+POST /lote/{batchNumber}/resultado-analise) por um turno — REVERTIDO.
+Voltou à versão federada original: lab com Fuseki próprio (POST /analise),
+certifier consultando lab + coop-a/coop-b via SPARQL federado. Ver
+docs/known-issues.md/CHANGELOG.md.
 
 LIMPEZA DE DADO LEGADO (fixture `autouse` abaixo): o certifier já tem
 MS-2026-042 no PRÓPRIO Fuseki, com moistureContent=18.0, inserido há muito
-tempo via certifier/data/sample-lab-result-valid.ttl (pipeline.py). Sem
-apagar esse dado antes do Cenário 1, `/credential` responderia 200 usando-o
-— um falso "verde" que mascararia a ausência total de integração com o lab.
-A fixture `_limpa_lote_no_certifier` remove esse dado (SPARQL DELETE WHERE)
-antes de cada cenário deste arquivo. Com isso, a MESMA asserção final do
-Cenário 1 (200 + legalStatus + moistureContent == "18.5") serve para as
-duas fases sem lógica condicional: HOJE ela falha de verdade (404, "lote
-não encontrado" — nem dado antigo nem lab existem), e DEPOIS que lab/
-existir e o certifier for reestruturado, ela passa por real — o
-moistureContent aí é checagem de dado de domínio, não mais discriminador
-de origem (correção feita a pedido do usuário; ver histórico da conversa).
+tempo via certifier/data/sample-lab-result-valid.ttl (pipeline.py, ambos já
+removidos do repo — histórico, não mais executável). Sem apagar esse dado
+antes do Cenário 1, `/credential` responderia 200 usando-o — um falso
+"verde" que mascararia a ausência total de integração com o lab. A fixture
+`_limpa_lote_no_certifier` remove esse dado (SPARQL DELETE WHERE) antes de
+cada cenário deste arquivo.
 """
 import sys
 from pathlib import Path

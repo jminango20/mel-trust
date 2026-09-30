@@ -10,11 +10,31 @@ um segundo gate — é o MESMO gate de pipeline.py, chamado via HTTP em vez de
 script CLI, sem mudança de comportamento; fixtures/testes existentes
 continuam válidos.
 
-Escopo dos campos aceitos (JSON): `batchNumber`, `productType`,
-`producerName`, `producerDID` são obrigatórios; `floralOrigin`,
-`productionDate`, `apiaryLocation` ({"lat":..., "lon":...}) são opcionais —
-mesma cautela de credential_endpoint.py contra campos ausentes (só entram no
-grafo se vierem preenchidos).
+Escopo dos campos aceitos (JSON): TODOS opcionais — `batchNumber`,
+`productType`, `producerName`, `producerDID`, `floralOrigin`,
+`productionDate`, `apiaryLocation` ({"lat":..., "lon":...}), `meliponaryId`
+e `environmentalLicenseNumber`. Só entram no grafo se vierem preenchidos
+(mesma cautela de credential_endpoint.py).
+
+SHACL, NÃO PYTHON, é a autoridade de validação de negócio (ver
+tests/features/shacl_autoridade_validacao.feature e docs/known-issues.md,
+"POST /lote: gate SHACL, na prática, sempre passa"). Python só valida FORMA
+(JSON bem formado; tipos corretos onde presentes — ex.: apiaryLocation.lat/lon
+numéricos, productType como nome de classe válido). `batchNumber`/`ownedBy`
+ausentes não são mais barrados em Python — o grafo é montado com o que vier
+e o gate SHACL (`HoneyApisIdentificationShape`, `sh:minCount`) decide,
+devolvendo a mensagem da PRÓPRIA shape em `shacl_violation`, não uma
+mensagem genérica de "campo obrigatório ausente". Réplica exata de
+coop-a/lote_endpoint.py — ver docstring lá para o raciocínio completo.
+
+`meliponaryId`/`environmentalLicenseNumber`: aceitos independente de
+`productType` (não há razão técnica pra proibir num produtor com operação
+mista Apis + nativa), mas só fazem sentido regulatório pra mel nativo hoje
+(:MeliponaryLicenseShape, Art. 68 da Portaria 795/2023 — ver
+tests/features/lote_meliponary.feature). `environmentalLicenseNumber` sem
+`meliponaryId` é erro (400): licença pertence a um meliponário. Só
+`meliponaryId`, sem licença, é aceito pelo Python — e REJEITADO pelo gate
+SHACL logo depois (minCount 1 em `:hasEnvironmentalLicense`).
 
 DELIBERADAMENTE DE FORA: `moistureContent`, `hmfContent`, `acidityContent`,
 `diastaseActivity`, `legalStatus`, `qualityStatus`. São medição/conclusão de
@@ -32,6 +52,7 @@ URI nova é gerada deterministicamente a partir do `producerDID`
 (`_slug`), do mesmo jeito que antes.
 """
 import re
+import uuid
 
 import requests
 from fastapi import APIRouter, Request
@@ -40,6 +61,7 @@ from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import FOAF, RDF, XSD
 
 from config import FUSEKI_ADMIN_PASSWORD, FUSEKI_ADMIN_USER, FUSEKI_URL
+from pre_auth_codes import generate_for_batch, reissue_for_batch
 from shacl_pipeline import extract_violations, format_violations, insert_into_fuseki, run_shacl
 
 router = APIRouter()
@@ -48,8 +70,6 @@ router = APIRouter()
 BEE = Namespace("https://w3id.org/agrisemantics/AGRITRUST/bee-extension#")
 AGRITRUST = Namespace("https://w3id.org/agrisemantics/AGRITRUST#")
 GEO = Namespace("http://www.opengis.net/ont/geosparql#")
-
-_REQUIRED_FIELDS = ("batchNumber", "productType", "producerName", "producerDID")
 
 # Local name de URI/classe: letra inicial + letras/dígitos/underscore. Guarda
 # mínima contra IRI malformada (ex.: productType com espaço) — NÃO é uma
@@ -87,6 +107,38 @@ def _sparql_literal(value: str) -> str:
     """
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
+
+
+def find_existing_lote(batch_number: str) -> str | None:
+    """Procura no Fuseki QUALQUER recurso com `agritrust:batchNumber` ==
+    batch_number, seja qual for sua URI. Diferente de reafirmar a MESMA URI
+    determinística (`Lote_{slug(batchNumber)}`) — isso já era idempotente em
+    tripla —, esta checagem cobre também recursos com URI DIFERENTE mas
+    mesmo batchNumber (ex.: fixture legado com URI escrita à mão vs. a URI
+    que este endpoint mintaria — foi exatamente esse tipo de duplicata,
+    achada no coop-a, que motivou esta checagem; ver docs/known-issues.md).
+    Retorna a URI (string) do primeiro achado, ou None se batchNumber ainda
+    não existe."""
+    query = f"""
+    PREFIX agritrust: <https://w3id.org/agrisemantics/AGRITRUST#>
+    SELECT ?lote WHERE {{
+      ?lote agritrust:batchNumber {_sparql_literal(batch_number)} .
+    }}
+    LIMIT 1
+    """
+    response = requests.post(
+        f"{FUSEKI_URL}/sparql",
+        data={"query": query},
+        headers={"Accept": "application/sparql-results+json"},
+        auth=(FUSEKI_ADMIN_USER, FUSEKI_ADMIN_PASSWORD),
+        timeout=20,
+    )
+    response.raise_for_status()
+
+    bindings = response.json().get("results", {}).get("bindings", [])
+    if not bindings:
+        return None
+    return bindings[0]["lote"]["value"]
 
 
 def find_existing_producer(producer_did: str) -> str | None:
@@ -132,23 +184,31 @@ async def cadastrar_lote(request: Request):
     if not isinstance(body, dict):
         return _error(400, "invalid_request", "Corpo da requisição deve ser um objeto JSON.")
 
-    missing = [f for f in _REQUIRED_FIELDS if not body.get(f)]
-    if missing:
-        return _error(
-            400,
-            "invalid_request",
-            f"Campos obrigatórios ausentes: {', '.join(missing)}.",
-        )
-
-    batch_number = str(body["batchNumber"])
-    product_type = str(body["productType"])
-    producer_name = str(body["producerName"])
-    producer_did = str(body["producerDID"])
+    # --- Validação de FORMA apenas (não de presença/negócio — isso é com o
+    # SHACL, ver docstring do módulo). Cada campo é lido com .get() e só
+    # vira string se vier preenchido; nenhum é obrigatório aqui. ---
+    batch_number = body.get("batchNumber")
+    batch_number = str(batch_number) if batch_number else None
+    product_type = body.get("productType")
+    product_type = str(product_type) if product_type else None
+    producer_name = body.get("producerName")
+    producer_name = str(producer_name) if producer_name else None
+    producer_did = body.get("producerDID")
+    producer_did = str(producer_did) if producer_did else None
     floral_origin = body.get("floralOrigin")
     production_date = body.get("productionDate")
     apiary_location = body.get("apiaryLocation")
+    meliponary_id = body.get("meliponaryId")
+    environmental_license_number = body.get("environmentalLicenseNumber")
 
-    if not _LOCAL_NAME_RE.match(product_type):
+    if environmental_license_number and not meliponary_id:
+        return _error(
+            400,
+            "invalid_request",
+            "environmentalLicenseNumber requer meliponaryId (licença pertence a um meliponário).",
+        )
+
+    if product_type is not None and not _LOCAL_NAME_RE.match(product_type):
         return _error(
             400,
             "invalid_request",
@@ -156,11 +216,42 @@ async def cadastrar_lote(request: Request):
             f"classe da ontologia (ex.: 'HoneyApis'), só letras/dígitos/underscore.",
         )
 
-    # --- 0. Resolve produtor existente por DID, antes de montar o grafo ---
-    try:
-        existing_producer = find_existing_producer(producer_did)
-    except Exception as exc:  # noqa: BLE001 - mesmo nível de reporte do pipeline.py
-        return _error(502, "server_error", f"Erro ao consultar o Fuseki: {exc}")
+    # --- 0a. Rejeita batchNumber já cadastrado (idempotência de negócio,
+    # não só de tripla — ver docstring de find_existing_lote). Só faz
+    # sentido se batchNumber veio; sem ele, não há o que checar aqui — o
+    # SHACL vai rejeitar a ausência mais adiante. ---
+    if batch_number is not None:
+        try:
+            if find_existing_lote(batch_number) is not None:
+                return _error(
+                    409,
+                    "lote_ja_cadastrado",
+                    f"Lote {batch_number!r} já está cadastrado.",
+                )
+        except Exception as exc:  # noqa: BLE001 - mesmo nível de reporte do pipeline.py
+            return _error(502, "server_error", f"Erro ao consultar o Fuseki: {exc}")
+
+    # --- 0b. Resolve produtor existente por DID (UMA consulta, resultado
+    # reusado abaixo pra decidir se é reuso ou produtor novo). Só roda se
+    # producerDID veio — sem ele, não há produtor a montar (o lote fica sem
+    # ownedBy, e o SHACL rejeita isso mais adiante). ---
+    producer_uri = None
+    is_new_producer = False
+    if producer_did is not None:
+        try:
+            existing_producer = find_existing_producer(producer_did)
+        except Exception as exc:  # noqa: BLE001 - mesmo nível de reporte do pipeline.py
+            return _error(502, "server_error", f"Erro ao consultar o Fuseki: {exc}")
+
+        if existing_producer is not None:
+            # Reusa o recurso já cadastrado (mesmo agritrust:hasDID) — não
+            # reinserimos rdf:type/foaf:name/hasDID: essas triplas já
+            # existem para esse produtor, reafirmá-las não é errado (RDF é
+            # um conjunto), mas não é necessário.
+            producer_uri = URIRef(existing_producer)
+        else:
+            producer_uri = BEE[f"Produtor_{_slug(producer_did)}"]
+            is_new_producer = True
 
     # --- 1. Monta o grafo RDF (mesma "forma" de data/sample-instance.ttl) ---
     g = Graph()
@@ -168,23 +259,24 @@ async def cadastrar_lote(request: Request):
     g.bind("geo", GEO)
     g.bind("foaf", FOAF)
 
-    lote_uri = BEE[f"Lote_{_slug(batch_number)}"]
+    # batchNumber ausente não impede o recurso de existir: usa um segmento
+    # opaco (uuid) só pra dar identidade URI ao nó, pro SHACL rodar sobre
+    # ele e reportar a ausência via HoneyApisIdentificationShape — não é
+    # usado como identificador de negócio em lugar nenhum.
+    lote_uri = BEE[f"Lote_{_slug(batch_number)}"] if batch_number else BEE[f"Lote_SemBatchNumber_{uuid.uuid4().hex[:12]}"]
 
-    if existing_producer is not None:
-        # Reusa o recurso já cadastrado (mesmo agritrust:hasDID) — não
-        # reinserimos rdf:type/foaf:name/hasDID: essas triplas já existem
-        # para esse produtor, reafirmá-las não é errado (RDF é um
-        # conjunto), mas não é necessário.
-        producer_uri = URIRef(existing_producer)
-    else:
-        producer_uri = BEE[f"Produtor_{_slug(producer_did)}"]
+    if is_new_producer:
         g.add((producer_uri, RDF.type, AGRITRUST.DataProducer))
-        g.add((producer_uri, FOAF.name, Literal(producer_name)))
+        if producer_name:
+            g.add((producer_uri, FOAF.name, Literal(producer_name)))
         g.add((producer_uri, AGRITRUST.hasDID, Literal(producer_did)))
 
-    g.add((lote_uri, RDF.type, BEE[product_type]))
-    g.add((lote_uri, AGRITRUST.ownedBy, producer_uri))
-    g.add((lote_uri, AGRITRUST.batchNumber, Literal(batch_number)))
+    if product_type is not None:
+        g.add((lote_uri, RDF.type, BEE[product_type]))
+    if producer_uri is not None:
+        g.add((lote_uri, AGRITRUST.ownedBy, producer_uri))
+    if batch_number is not None:
+        g.add((lote_uri, AGRITRUST.batchNumber, Literal(batch_number)))
     if floral_origin:
         # Dado declarado pelo produtor na colheita (ver docstring do módulo,
         # e docs/notas-arquitetura/narrativa-como-criterio-mvp.md) — mesmo
@@ -208,16 +300,33 @@ async def cadastrar_lote(request: Request):
             return _error(400, "invalid_request", "apiaryLocation.lat/lon devem ser números.")
 
         # URIs determinísticas por batchNumber (não blank node) — mesma
-        # razão do _slug acima.
-        geo_feature_uri = BEE[f"Apiario_{_slug(batch_number)}_Geo"]
-        geo_point_uri = BEE[f"Apiario_{_slug(batch_number)}_Point"]
-        g.add((producer_uri, AGRITRUST.hasOperatingLocation, geo_feature_uri))
+        # razão do _slug acima. Sem batchNumber, usa o mesmo segmento
+        # opaco do lote_uri (lote_uri já resolve pra um segmento válido em
+        # ambos os casos — ver acima).
+        geo_slug = _slug(batch_number) if batch_number else lote_uri.split("Lote_", 1)[-1]
+        geo_feature_uri = BEE[f"Apiario_{geo_slug}_Geo"]
+        geo_point_uri = BEE[f"Apiario_{geo_slug}_Point"]
+        if producer_uri is not None:
+            g.add((producer_uri, AGRITRUST.hasOperatingLocation, geo_feature_uri))
         g.add((geo_feature_uri, RDF.type, GEO.Feature))
         g.add((geo_feature_uri, GEO.hasGeometry, geo_point_uri))
         g.add((geo_point_uri, RDF.type, GEO.Point))
         # Convenção do projeto: POINT(lon lat), não POINT(lat lon) — ver
         # coop-a/data/sample-instance.ttl e ontology/instances.ttl.
         g.add((geo_point_uri, GEO.asWKT, Literal(f"POINT({lon} {lat})", datatype=GEO.wktLiteral)))
+
+    if meliponary_id:
+        # Réplica exata de coop-a/lote_endpoint.py — ver docstring lá.
+        meliponary_uri = BEE[f"Meliponario_{_slug(meliponary_id)}"]
+        g.add((meliponary_uri, RDF.type, BEE.Meliponary))
+        if producer_uri is not None:
+            g.add((meliponary_uri, AGRITRUST.ownedBy, producer_uri))
+        g.add((meliponary_uri, AGRITRUST.hasIdentifier, Literal(meliponary_id)))
+        if environmental_license_number:
+            license_uri = BEE[f"Licenca_{_slug(meliponary_id)}"]
+            g.add((meliponary_uri, BEE.hasEnvironmentalLicense, license_uri))
+            g.add((license_uri, RDF.type, BEE.EnvironmentalLicense))
+            g.add((license_uri, BEE.environmentalLicenseNumber, Literal(environmental_license_number)))
 
     # --- 2. Gate SHACL — mesma função que pipeline.py usa ---
     conforms, results_graph, _ = run_shacl(g)
@@ -236,9 +345,37 @@ async def cadastrar_lote(request: Request):
     except Exception as exc:  # noqa: BLE001 - mesmo nível de reporte do pipeline.py
         return _error(502, "server_error", f"Erro ao inserir no Fuseki: {exc}")
 
+    # --- 4. Gera o pre_authorized_code único e de uso único deste lote ---
+    # Só se batchNumber veio — ver docstring de coop-a/lote_endpoint.py
+    # (mesmo raciocínio de caso de borda: sem batchNumber E sem productType,
+    # HoneyApisIdentificationShape não se aplica ao nó e ele pode passar).
+    pre_authorized_code = generate_for_batch(batch_number) if batch_number is not None else None
+
     return {
         "status": "inserted",
         "batchNumber": batch_number,
         "lote": str(lote_uri),
-        "producer": str(producer_uri),
+        "producer": str(producer_uri) if producer_uri is not None else None,
+        "pre_authorized_code": pre_authorized_code,
     }
+
+
+@router.post("/lote/{batch_number}/reemitir-codigo")
+async def reemitir_codigo(batch_number: str):
+    """Invalida o pre_authorized_code atual do lote e gera um novo. Réplica
+    exata de coop-a/lote_endpoint.py — ver docstring lá."""
+    novo_codigo, erro = reissue_for_batch(batch_number)
+    if erro == "not_found":
+        return _error(
+            404,
+            "lote_sem_codigo",
+            f"Lote {batch_number!r} não tem pre_authorized_code registrado "
+            f"(não foi cadastrado via POST /lote nesta execução, ou o processo reiniciou).",
+        )
+    if erro == "already_used":
+        return _error(
+            409,
+            "codigo_ja_utilizado",
+            "Código já utilizado, lote já possui credencial emitida.",
+        )
+    return {"batchNumber": batch_number, "pre_authorized_code": novo_codigo}

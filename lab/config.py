@@ -7,6 +7,11 @@ valida contra ontology/lab-analysis-shape.ttl (gate de forma/plausibilidade,
 ver shacl_pipeline.py) e guarda no seu próprio Fuseki — quem consome esse
 dado depois é o certifier, via SPARQL federado (fora do escopo deste nó).
 
+HISTÓRICO: este nó chegou a virar stateless (sem Fuseki, POST /avaliar sem
+persistência) por um turno, e foi REVERTIDO — voltou a ter Fuseki próprio e
+POST /analise com persistência, como era originalmente. Ver
+docs/known-issues.md/CHANGELOG.md.
+
 Mesmo padrão de leitura de env var (python-dotenv + os.environ, sem
 pydantic-settings) que os outros três nós já usam.
 """

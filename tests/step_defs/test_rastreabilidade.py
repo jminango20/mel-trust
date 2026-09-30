@@ -2,34 +2,31 @@
 Step defs (pytest-bdd) para tests/features/rastreabilidade_mel.feature.
 
 Chama os SERVIÇOS REAIS via HTTP (coop-a :8001, verifier-demo :8004) — não
-sobe nada, não faz mock. Pré-condição: os 4 nós + os 3 Fuseki no ar, com os
-fixtures de coop-a já inseridos (pipeline.py, ver docs/demo-ivan.md).
+sobe nada, não faz mock. Pré-condição: coop-a e verifier-demo no ar, com
+MS-2026-042 já cadastrado via POST /lote (lote canônico, migrado de
+pipeline.py+fixture — ver docs/known-issues.md e CHANGELOG.md).
 
-DESVIO DELIBERADO no Cenário 2, documentado aqui (e reportado ao usuário):
-o pedido original testava a rejeição SHACL "via POST /lote", igual ao
-Cenário 1. Isso não é possível hoje: POST /lote (coop-a/lote_endpoint.py)
-DELIBERADAMENTE não aceita campos de qualidade (moistureContent, hmfContent,
-acidityContent, diastaseActivity) — são exclusivos do certifier (ver
-docstring de lote_endpoint.py e docs/notas-arquitetura/narrativa-como-criterio-mvp.md).
-Sem esses campos, as shapes de Violation que dependem deles
-(HoneyApisMoistureShape etc.) nunca disparam via /lote — é a mesma lacuna
-já registrada em docs/known-issues.md ("POST /lote: gate SHACL, na prática,
-sempre passa"). Por isso o Cenário 2 testa a rejeição via `pipeline.py`
-(CLI, subprocess), contra o fixture real
-coop-a/data/sample-instance-invalid.ttl (umidade 24.5%, já existente no
-repo) — é o único caminho real que hoje dispara essa violação específica.
+HISTÓRICO: este arquivo tinha um Cenário 2 que testava rejeição SHACL por
+medição via `pipeline.py` (CLI) + fixture inválida — REMOVIDO junto com
+pipeline.py (ver docs/known-issues.md). Cobertura equivalente (rejeição por
+medição fora do limite) já está em tests/features/lab_certifier.feature,
+Cenário 2. Também não é mais reafirmado moistureContent na credencial do
+coop-a: desde a migração pra /lote, o lote canônico não carrega mais campos
+de qualidade (são exclusivos do certifier/lab, ver
+docs/notas-arquitetura/narrativa-como-criterio-mvp.md) — o coop-a que
+tinha esses campos residuais (`:Lote_Mel_Silvestre_2026_042`) era
+justamente o known-issue já registrado e agora resolvido pela migração.
 
 Reuso: a montagem do proof JWT (posse de chave do holder) e o decode do
 SD-JWT reaproveitam scripts/test_credential_flow.py (build_proof_jwt,
 b64url_json) em vez de duplicar a lógica de assinatura/decodificação.
 """
-import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
 import requests
+from dotenv import dotenv_values
 from jwcrypto.jwk import JWK
 from pytest_bdd import given, parsers, scenarios, then, when
 
@@ -42,21 +39,16 @@ scenarios("../features/rastreabilidade_mel.feature")
 COOP_A_URL = "http://localhost:8001"
 VERIFIER_URL = "http://localhost:8004"
 
-# Dado real da narrativa (MS-2026-042), já inserido no Fuseki via
-# coop-a/data/sample-instance.ttl — POST /lote nos steps abaixo REAFIRMA
-# essas triplas (idempotente, mesma URI determinística), não inventa lote
-# novo. Ver docstring do módulo sobre por que "umidade" não é um campo que
-# o /lote aceita: ela já está no Fuseki desde o fixture original.
 BATCH_NUMBER_VALID = "MS-2026-042"
 PRODUCER_NAME = "João da Silva"
 PRODUCER_DID = "did:key:z6MkhssBusXfHjvnvquNJjwQaVYTGsvgY9otdhLhKyCaXJT9"
 FLORAL_ORIGIN = "Aroeira (Myracrodruon urundeuva)"
-APIARY_LAT = -15.7
-APIARY_LON = -47.9
 PRE_AUTHORIZED_CODE = "coop-a-demo-pre-auth-code"
 PRODUCER_KEY_PATH = REPO_ROOT / "fixtures" / "producer-keys" / "producer-coop-a.pem"
 
-INVALID_FIXTURE = "data/sample-instance-invalid.ttl"  # relativo a coop-a/
+_coop_a_env = dotenv_values(REPO_ROOT / "coop-a" / ".env")
+COOP_A_FUSEKI_URL = _coop_a_env.get("FUSEKI_URL", "http://127.0.0.1:3030/coop-a")
+COOP_A_FUSEKI_ADMIN_PASSWORD = _coop_a_env.get("FUSEKI_ADMIN_PASSWORD")
 
 
 @pytest.fixture
@@ -69,40 +61,29 @@ def context():
 # --- Cenário 1: fluxo feliz -------------------------------------------------
 
 
-@given(parsers.parse("um lote de mel de Apis mellifera com umidade {moisture}%"))
-def lote_com_umidade(context, moisture):
-    # MESMO texto de step nos dois cenários (reuso normal de BDD) — a
-    # fixture `context` é recriada do zero a cada cenário pelo pytest, então
-    # não há vazamento de estado entre o Cenário 1 e o Cenário 2. Aqui só
-    # guardamos a umidade esperada para referência/asserção; no Cenário 1
-    # ela já está gravada no Fuseki (fixture original, não criada por este
-    # step); no Cenário 2, ela corresponde ao fixture inválido usado no
-    # step "Quando" (sample-instance-invalid.ttl, 24.5%).
-    context["moisture_esperada"] = moisture
-    context["batch_number"] = BATCH_NUMBER_VALID
-
-
-@when("o produtor cadastra o lote via POST /lote no coop-a")
-def cadastra_lote(context):
-    body = {
-        "batchNumber": context["batch_number"],
-        "productType": "HoneyApis",
-        "producerName": PRODUCER_NAME,
-        "producerDID": PRODUCER_DID,
-        "floralOrigin": FLORAL_ORIGIN,
-        "productionDate": "2026-04-15",
-        "apiaryLocation": {"lat": APIARY_LAT, "lon": APIARY_LON},
-    }
-    context["lote_response"] = requests.post(f"{COOP_A_URL}/lote", json=body, timeout=20)
-
-
-@then("o gate SHACL aprova e o lote é inserido no Fuseki")
-def gate_aprova(context):
-    resp = context["lote_response"]
-    assert resp.status_code == 200, f"esperado 200, veio {resp.status_code}: {resp.text}"
-    body = resp.json()
-    assert body["status"] == "inserted"
-    assert body["batchNumber"] == context["batch_number"]
+@given(parsers.parse("o lote {batch_number} já cadastrado no coop-a"))
+def lote_ja_cadastrado(context, batch_number):
+    # Verifica, não cria — MS-2026-042 é o lote canônico, cadastrado via
+    # POST /lote fora deste teste (idempotência de negócio impede
+    # recadastro por este step, ver lote_idempotente.feature).
+    query = f"""
+    PREFIX agritrust: <https://w3id.org/agrisemantics/AGRITRUST#>
+    SELECT (COUNT(*) AS ?n) WHERE {{ ?lote agritrust:batchNumber "{batch_number}" }}
+    """
+    resp = requests.post(
+        f"{COOP_A_FUSEKI_URL}/sparql",
+        data={"query": query},
+        headers={"Accept": "application/sparql-results+json"},
+        auth=("admin", COOP_A_FUSEKI_ADMIN_PASSWORD),
+        timeout=20,
+    )
+    resp.raise_for_status()
+    count = int(resp.json()["results"]["bindings"][0]["n"]["value"])
+    assert count >= 1, (
+        f"esperava {batch_number!r} já cadastrado no coop-a (via POST /lote), "
+        f"achou {count} recursos"
+    )
+    context["batch_number"] = batch_number
 
 
 @when("o coop-a emite a credencial via POST /credential")
@@ -152,10 +133,17 @@ def confere_claims_disclosable(context):
     assert disclosed.get("floralOrigin") == FLORAL_ORIGIN
     assert disclosed.get("producerName") == PRODUCER_NAME
     assert disclosed.get("producerDID") == PRODUCER_DID
-    assert disclosed.get("moistureContent") == context["moisture_esperada"]
+    # moistureContent NÃO é mais claim do coop-a (campo de qualidade,
+    # exclusivo do certifier/lab desde a migração pra POST /lote — ver
+    # docstring do módulo). apiaryLocation CONTINUA presente: vem do
+    # PRODUTOR (agritrust:hasOperatingLocation), não do lote em si — a
+    # migração só recriou o recurso do lote, não tocou no produtor
+    # (reusado por find_existing_producer), então a geolocalização
+    # original do fixture sobrevive intacta.
+    assert "moistureContent" not in disclosed
     assert "apiaryLocation" in disclosed
-    assert disclosed["apiaryLocation"]["lat"] == APIARY_LAT
-    assert disclosed["apiaryLocation"]["lon"] == APIARY_LON
+    assert disclosed["apiaryLocation"]["lat"] == -15.7
+    assert disclosed["apiaryLocation"]["lon"] == -47.9
 
 
 @when(parsers.parse('o verifier-demo consulta GET /verify com propósito "{purpose}"'))
@@ -176,40 +164,3 @@ def confere_verify(context):
     assert body["batchNumber"] == context["batch_number"]
     assert body["sourceNode"] == "coop-a"
     assert body["batch"]["floralOrigin"] == FLORAL_ORIGIN
-
-
-# --- Cenário 2: rejeição SHACL ----------------------------------------------
-
-
-@when("o produtor tenta cadastrar esse lote via pipeline.py no coop-a")
-def tenta_cadastrar_invalido(context):
-    import os
-
-    coop_a_dir = REPO_ROOT / "coop-a"
-    python_exe = coop_a_dir / ".venv" / "Scripts" / "python.exe"
-    # PYTHONIOENCODING=utf-8: sem isso, o pipeline.py filho escreve
-    # stdout/stderr na codepage padrão do Windows (cp1252) — daí o
-    # `encoding="utf-8"` abaixo (usado pra decodificar o que o filho
-    # escreveu) não bate com o que ele realmente escreveu, e o
-    # subprocess.run derruba silenciosamente (result.stdout vira None em vez
-    # de levantar UnicodeDecodeError de forma visível). Achado real ao
-    # rodar este teste pela primeira vez — não é comportamento hipotético.
-    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-    result = subprocess.run(
-        [str(python_exe), "pipeline.py", INVALID_FIXTURE],
-        cwd=str(coop_a_dir),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        env=env,
-        timeout=60,
-    )
-    context["pipeline_result"] = result
-
-
-@then("o gate SHACL rejeita e nada é inserido no Fuseki")
-def confere_rejeicao(context):
-    result = context["pipeline_result"]
-    assert result.returncode != 0, f"esperava rejeição (exit != 0), saída:\n{result.stdout}\n{result.stderr}"
-    assert "conforms=False" in result.stdout
-    assert "Umidade acima de 20%" in result.stdout

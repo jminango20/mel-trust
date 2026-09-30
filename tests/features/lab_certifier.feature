@@ -1,9 +1,14 @@
 # language: pt
-# Fase RED (TDD): estes 2 cenários são escritos e rodados ANTES de lab/
-# existir e ANTES do certifier ser reestruturado — devem falhar hoje. Ver
-# tests/step_defs/test_lab_certifier.py para as 3 decisões de design que
-# não estavam no texto original (porta do lab, endpoint-gatilho do
-# certifier, batchNumber do cenário 2), documentadas lá.
+# HISTÓRICO: este arquivo chegou a ser reescrito pra uma arquitetura
+# "lab stateless" (POST /avaliar, coop-a persiste) por um turno —
+# REVERTIDO. Voltou à arquitetura original: lab com Fuseki próprio
+# (POST /analise), certifier consultando lab + coop-a/coop-b via SPARQL
+# federado. Ver docs/known-issues.md/CHANGELOG.md.
+#
+# 3 DECISÕES DE DESIGN (do texto original, mantidas): porta do lab (8005,
+# sequência já usada), gatilho HTTP do certifier (reusa /credential já
+# existente), batchNumber do Cenário 2 dedicado
+# ("MS-2026-042-LAB-REJEITADO", não colide com dado legado).
 
 Funcionalidade: Laboratório insere análise e certificador valida contra regra regulatória
 

@@ -90,28 +90,27 @@ FUSEKI_ADMIN_PASSWORD = os.environ.get("FUSEKI_ADMIN_PASSWORD")
 
 # Batch number default usado quando o corpo de POST /credential não informa
 # um `batch_number` explícito (extensão própria do MVP). AQUI, diferente de
-# coop-a/coop-b, este valor identifica o LOTE SOBRE O QUAL O LAUDO FALA (o
-# laudo em si não tem um "número de lote" próprio — ele referencia, via
-# agritrust:batchNumber, o mesmo lote que a cooperativa já cadastrou; ver
-# certifier/data/sample-lab-result-valid.ttl, :Lote_Mel_Silvestre_2026_042).
-# Mesmo valor literal que M3 tinha hardcoded como claim `batchNumber` da
-# credencial de certificação ("MS-2026-042") — agora é o fallback de qual
-# laudo buscar no Fuseki via essa chave.
+# coop-a/coop-b, este valor identifica o LOTE SOBRE O QUAL O LAUDO FALA —
+# fallback de qual lote consultar via SPARQL federado (ver abaixo) quando
+# nenhum `batch_number` vem no corpo de POST /credential.
 DEFAULT_BATCH_NUMBER = os.environ.get("DEFAULT_BATCH_NUMBER", "MS-2026-042")
 
 # --- M5.6 (pós-narrativa): federação para o gate regulatório real ---
 #
-# O certifier deixou de ler fixture .ttl local (certifier/data/sample-lab-
-# result-*.ttl via pipeline.py) para POST /credential — ele agora consulta,
-# em tempo real, o Fuseki do lab (medições físico-químicas) e de
-# coop-a/coop-b (productType do lote) via SPARQL federado, mesmo padrão
-# `SERVICE` já usado em verifier-demo/verify_endpoint.py (ver docstring lá
-# para o porquê de `host.docker.internal`: estas URLs são resolvidas de
-# DENTRO do container do Fuseki do certifier — que atua como nó de entrada
-# desta consulta —, não pelo processo Python do certifier). Nenhuma dessas
-# três é `127.0.0.1`: essa correção (ver FUSEKI_URL acima) vale para
-# conexão HOST -> porta publicada; aqui o contexto de rede é outro
-# (container -> host), resolvido por host.docker.internal.
+# O certifier consulta, em tempo real, o Fuseki do lab (medições
+# físico-químicas) e de coop-a/coop-b (productType do lote) via SPARQL
+# federado, mesmo padrão `SERVICE` já usado em
+# verifier-demo/verify_endpoint.py (ver docstring lá para o porquê de
+# `host.docker.internal`: estas URLs são resolvidas de DENTRO do container
+# do Fuseki do certifier — que atua como nó de entrada desta consulta —,
+# não pelo processo Python do certifier). Nenhuma dessas três é
+# `127.0.0.1`: essa correção (ver FUSEKI_URL acima) vale para conexão
+# HOST -> porta publicada; aqui o contexto de rede é outro (container ->
+# host), resolvido por host.docker.internal.
+#
+# HISTÓRICO: esta federação chegou a ser reduzida pra só coop-a/coop-b (lab
+# virou stateless por um turno) — REVERTIDO. LAB_SPARQL_SERVICE_URL voltou.
+# Ver docs/known-issues.md/CHANGELOG.md.
 COOP_A_SPARQL_SERVICE_URL = os.environ.get(
     "COOP_A_SPARQL_SERVICE_URL", "http://host.docker.internal:3030/coop-a/sparql"
 )

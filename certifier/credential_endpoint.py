@@ -20,13 +20,17 @@ Tipo: `HoneyCertificationCredential`
 docstring original de M3 para a justificativa completa de ter dois VCTs.
 
 M5.6 (pós-narrativa) — REESTRUTURAÇÃO: o certifier deixou de ler fixture
-.ttl local (certifier/data/sample-lab-result-*.ttl via pipeline.py) para
-montar os claims desta credencial. `pipeline.py`/`certifier/data/*.ttl`
-continuam existindo no repo (não apagados), mas ficaram desconectados
-deste fluxo — são histórico/legado, não a fonte de dado real do
-`/credential` a partir de agora.
+.ttl local (certifier/data/sample-lab-result-*.ttl via pipeline.py, ambos
+já removidos do repo) para montar os claims desta credencial.
 
-O NOVO fluxo (Parte 4 abaixo), a cada chamada de `/credential`:
+HISTÓRICO (M6, revertido): por um turno, o certifier chegou a parar de
+federar com o lab (que virou stateless) e passou a ler medições só de
+coop-a/coop-b (`POST /lote/{batchNumber}/resultado-analise`). Isso foi
+REVERTIDO — o lab voltou a ter Fuseki próprio (`POST /analise` persiste de
+novo) e o certifier voltou a federar com os TRÊS (coop-a/coop-b + lab), como
+era originalmente. Ver docs/known-issues.md/CHANGELOG.md.
+
+O fluxo (Parte 4 abaixo), a cada chamada de `/credential`:
   1. Roda UMA query SPARQL federada (mesmo padrão `SERVICE` real de
      verifier-demo/verify_endpoint.py — ver a docstring de lá para a
      explicação completa da mecânica), enviada ao PRÓPRIO Fuseki do
@@ -37,8 +41,8 @@ O NOVO fluxo (Parte 4 abaixo), a cada chamada de `/credential`:
          limite certo).
        - lab (OPTIONAL): busca `moistureContent`/`hmfContent`/`acidityContent`/
          `diastaseActivity` — as medições físico-químicas de verdade,
-         agora vindas do nó `lab/` (POST /analise), não mais gravadas
-         localmente no certifier.
+         vindas do nó `lab/` (POST /analise), não gravadas localmente no
+         certifier.
   2. Monta um grafo RDF EFêMERO, em memória, nunca persistido em nenhum
      Fuseki: um recurso com `rdf:type` = o `productType` encontrado, e as
      medições encontradas como propriedades (mesmas URIs de sempre:
@@ -505,9 +509,9 @@ async def credential_endpoint(request: Request):
 
     # --- Disclosable (cada SDObj vira uma Disclosure própria) ---
 
-    # SEM `certificateType`/`certificateNumber`: não há dado real (nem no
-    # lab, nem em coop-a/coop-b) que corresponda a esses dois campos.
-    # Ausentes até M5.5 — ver docs/notas-arquitetura/certifier-claims-hardcoded-m4.md.
+    # SEM `certificateType`/`certificateNumber`: não há dado real (nem em
+    # coop-a/coop-b) que corresponda a esses dois campos. Ausentes até M5.5
+    # — ver docs/notas-arquitetura/certifier-claims-hardcoded-m4.md.
 
     # Parâmetros físico-químicos: agora vindos do lab (via federação), não
     # mais de fixture local. Cada um só entra se a query retornou valor

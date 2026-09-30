@@ -3,6 +3,10 @@ Gate SHACL do nó lab: validar um rdflib.Graph contra
 ontology/lab-analysis-shape.ttl (forma/plausibilidade da análise, não regra
 regulatória) e, se conforme, inserir no Fuseki via SPARQL Update.
 
+HISTÓRICO: insert_into_fuseki foi removida por um turno (lab virou
+stateless) e RESTAURADA — o lab voltou a persistir no próprio Fuseki. Ver
+docs/known-issues.md/CHANGELOG.md.
+
 Cópia adaptada de coop-a/shacl_pipeline.py — MESMA estrutura (run_shacl,
 extract_violations, format_violations, insert_into_fuseki), com uma única
 mudança central: SHAPES_PATH aponta para lab-analysis-shape.ttl em vez de

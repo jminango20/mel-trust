@@ -2,6 +2,11 @@
 POST /analise — recebe uma análise de laboratório e grava no Fuseki do nó
 lab, depois de passar pelo gate SHACL (ontology/lab-analysis-shape.ttl).
 
+HISTÓRICO: este endpoint chegou a ser renomeado para POST /avaliar e perder
+a persistência (lab virou stateless por um turno) — REVERTIDO. Voltou a se
+chamar /analise e a persistir no Fuseki do lab, como era originalmente. Ver
+docs/known-issues.md/CHANGELOG.md.
+
 Este nó NÃO emite credencial nem participa do fluxo OID4VCI — quem consome
 esse dado é o certifier, via SPARQL federado (SERVICE contra o Fuseki deste
 nó), tarefa separada. Aqui só existe entrada + validação + persistência.

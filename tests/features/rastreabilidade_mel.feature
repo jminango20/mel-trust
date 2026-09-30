@@ -1,31 +1,35 @@
 # language: pt
 # Baseado na narrativa oficial do lote MS-2026-042 (produtor João da Silva,
 # mel silvestre de Aroeira) — ver
-# docs/notas-arquitetura/narrativa-como-criterio-mvp.md. Os dois cenários
-# usam DADO REAL já presente no Fuseki do coop-a (via fixture
-# coop-a/data/sample-instance.ttl / sample-instance-invalid.ttl,
-# inseridas por pipeline.py) — não inventam lote sintético.
+# docs/notas-arquitetura/narrativa-como-criterio-mvp.md. MS-2026-042 é o
+# lote CANÔNICO do coop-a, cadastrado via POST /lote (migrado de
+# pipeline.py+fixture — ver CHANGELOG.md e docs/known-issues.md). Não é
+# criado por este teste (idempotência de negócio impede recadastro, ver
+# tests/features/lote_idempotente.feature) — só verificado como
+# pré-existente.
+#
+# O cenário de rejeição SHACL por medição (antigo Cenário 2 deste arquivo,
+# via `pipeline.py` + fixture inválida) foi REMOVIDO: pipeline.py não existe
+# mais (ver docs/known-issues.md), e essa cobertura já está garantida em
+# tests/features/lab_certifier.feature (Cenário 2, mel de Jataí fora do
+# limite). O único gate SHACL que resta ao produtor via /lote é o
+# estrutural (batchNumber/ownedBy/geo/licença de meliponário), já testado
+# em lote_idempotente.feature, pre_authorized_code.feature e
+# lote_meliponary.feature.
 #
 # Pré-condição para rodar: coop-a (porta 8001) e verifier-demo (porta 8004)
-# no ar, com os fixtures de coop-a já inseridos no Fuseki (ver
-# docs/demo-ivan.md, seção 0/1). Os testes NÃO sobem nenhum serviço.
+# no ar, com MS-2026-042 já cadastrado via POST /lote. Os testes NÃO sobem
+# nenhum serviço.
 
 
 Funcionalidade: Rastreabilidade de lote de mel do produtor até a verificação federada
 
   Cenário: Lote de mel de Apis dentro do padrão é rastreado de ponta a ponta
-    Dado um lote de mel de Apis mellifera com umidade 18.5%
-    Quando o produtor cadastra o lote via POST /lote no coop-a
-    Então o gate SHACL aprova e o lote é inserido no Fuseki
+    Dado o lote MS-2026-042 já cadastrado no coop-a
     Quando o coop-a emite a credencial via POST /credential
     Então o SD-JWT VC contém floralOrigin e demais claims disclosable corretos
     Quando o verifier-demo consulta GET /verify com propósito "Compliance EUDR"
     Então retorna 200 com o dado agregado correto
-
-  Cenário: Lote de mel de Apis fora do padrão é rejeitado pelo gate SHACL
-    Dado um lote de mel de Apis mellifera com umidade 24.5%
-    Quando o produtor tenta cadastrar esse lote via pipeline.py no coop-a
-    Então o gate SHACL rejeita e nada é inserido no Fuseki
 
   @futuro
   Cenário: Contratos de dados multi-política restringem acesso por propósito e ator
