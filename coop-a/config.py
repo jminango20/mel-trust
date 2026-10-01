@@ -93,6 +93,18 @@ FUSEKI_URL = os.environ.get("FUSEKI_URL", "http://127.0.0.1:3030/coop-a")
 FUSEKI_ADMIN_USER = os.environ.get("FUSEKI_ADMIN_USER", "admin")
 FUSEKI_ADMIN_PASSWORD = os.environ.get("FUSEKI_ADMIN_PASSWORD")
 
+# --- Holder: coop-a retira a VC de certificação do certifier ---
+#
+# URL base do certifier, usada por `POST /lote/{batch_number}/retirar-certificacao`
+# (lote_endpoint.py) para rodar o fluxo completo (pre-authorized-code ->
+# /token -> /nonce -> /credential) como Holder. `localhost`, não
+# `host.docker.internal`: neste ambiente de dev os 5 nós rodam como
+# processos uvicorn diretos no host (não em containers Docker próprios —
+# só o Fuseki de cada um roda em container), então coop-a chamando
+# certifier é host->host, mesma perspectiva de rede dos scripts de teste
+# (scripts/test_credential_flow.py).
+CERTIFIER_URL = os.environ.get("CERTIFIER_URL", "http://localhost:8003")
+
 # Batch number default usado quando o corpo de POST /credential não informa
 # um `batch_number` explícito (extensão própria do MVP, ver
 # credential_endpoint.py Parte 2). Mesmo valor literal que M3 tinha

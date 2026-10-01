@@ -50,20 +50,24 @@ recurso de produtor para o mesmo DID. Só se não existir nenhum é que uma
 URI nova é gerada deterministicamente a partir do `producerDID`
 (`_slug`), do mesmo jeito que antes.
 """
+import json
 import logging
 import re
+import time
 import uuid
 
 import requests
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from jwcrypto.jws import JWS
 from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import FOAF, RDF, XSD
 from web3 import Web3
 
 from anchoring import anchor_batch
-from config import FUSEKI_ADMIN_PASSWORD, FUSEKI_ADMIN_USER, FUSEKI_URL
+from config import CERTIFIER_URL, FUSEKI_ADMIN_PASSWORD, FUSEKI_ADMIN_USER, FUSEKI_URL
 from hash_utils import deterministic_nt_hash
+from keys import get_issuer_key
 from pre_auth_codes import generate_for_batch, reissue_for_batch
 from shacl_pipeline import extract_violations, format_violations, insert_into_fuseki, run_shacl
 
@@ -528,3 +532,124 @@ async def reemitir_codigo(batch_number: str):
             "Código já utilizado, lote já possui credencial emitida.",
         )
     return {"batchNumber": batch_number, "pre_authorized_code": novo_codigo}
+
+
+# --- Holder: coop-a retira e guarda a VC de certificação do certifier ---
+#
+# PROOF_JWT_TYP: mesmo valor usado em certifier/credential_endpoint.py e
+# scripts/test_credential_flow.py (header `typ` do JWT de key proof,
+# conforme OID4VCI).
+_PROOF_JWT_TYP = "openid4vci-proof+jwt"
+
+
+def _build_proof_jwt(audience: str, c_nonce: str) -> str:
+    """Monta o JWT de key proof assinado pela chave do PRÓPRIO issuer
+    coop-a (`keys.get_issuer_key()`) — mesma Ed25519 que assina os
+    SD-JWT VC que a coop-a emite. SIMPLIFICAÇÃO DE MVP, documentada: a
+    coop-a não tem uma identidade de "holder" separada da de "issuer"
+    (nenhum M anterior criou uma); reusar a chave do issuer evita inventar
+    infraestrutura de chave nova só para este fluxo, no mesmo espírito de
+    outras simplificações já aceitas no projeto (proof JWT do holder nunca
+    é verificado contra PKI real por quem emite — ver
+    certifier/credential_endpoint.py). Mesma mecânica de
+    scripts/test_credential_flow.py:build_proof_jwt, não reaproveitada de
+    lá por ser um script de teste (argparse), não um módulo importável."""
+    key = get_issuer_key()
+    public_jwk = json.loads(key.export_public())
+    header = {"alg": "EdDSA", "typ": _PROOF_JWT_TYP, "jwk": public_jwk}
+    payload = {"aud": audience, "iat": int(time.time()), "nonce": c_nonce}
+    jws = JWS(json.dumps(payload).encode())
+    jws.add_signature(key, alg="EdDSA", protected=json.dumps(header))
+    return jws.serialize(compact=True)
+
+
+@router.post("/lote/{batch_number}/retirar-certificacao")
+async def retirar_certificacao(batch_number: str):
+    """Roda o fluxo completo de Holder contra o certifier (mesmo mecanismo
+    já testado em tests/features/holder_certificacao.feature/
+    ancoragem_certificacao.feature, agora como código de PRODUÇÃO, não só
+    chamado por teste): POST /lote/{batch}/pre-authorized-code ->
+    /token -> /nonce -> /credential. Se a VC vier com sucesso, guarda o
+    SD-JWT completo no PRÓPRIO Fuseki da coop-a, como LITERAL (não RDF
+    estruturado — a VC já é auto-contida/assinada; decompor em triplas não
+    agrega nada e complicaria revalidação de assinatura depois), vinculado
+    ao recurso do lote via `agritrust:hasCertificationCredential` — mesma
+    URI determinística já usada em POST /lote (`BEE[f"Lote_{slug}"]`). Ver
+    tests/features/holder_persiste_vc.feature."""
+    try:
+        lookup_resp = requests.post(
+            f"{CERTIFIER_URL}/lote/{batch_number}/pre-authorized-code", timeout=10
+        )
+    except requests.RequestException as exc:
+        return _error(502, "server_error", f"Falha ao contatar o certifier: {exc}")
+
+    if lookup_resp.status_code != 200:
+        return JSONResponse(status_code=lookup_resp.status_code, content=lookup_resp.json())
+    pre_authorized_code = lookup_resp.json()["pre_authorized_code"]
+
+    token_resp = requests.post(
+        f"{CERTIFIER_URL}/token",
+        data={
+            "grant_type": "urn:ietf:params:oauth:grant-type:pre-authorized_code",
+            "pre-authorized_code": pre_authorized_code,
+        },
+        timeout=10,
+    )
+    if token_resp.status_code != 200:
+        return JSONResponse(status_code=token_resp.status_code, content=token_resp.json())
+    access_token = token_resp.json()["access_token"]
+
+    meta_resp = requests.get(f"{CERTIFIER_URL}/.well-known/openid-credential-issuer", timeout=10)
+    meta_resp.raise_for_status()
+    meta = meta_resp.json()
+    config_id = next(iter(meta["credential_configurations_supported"]))
+
+    nonce_resp = requests.post(f"{CERTIFIER_URL}/nonce", timeout=10)
+    nonce_resp.raise_for_status()
+    c_nonce = nonce_resp.json()["c_nonce"]
+
+    proof_jwt = _build_proof_jwt(meta["credential_issuer"], c_nonce)
+
+    credential_resp = requests.post(
+        f"{CERTIFIER_URL}/credential",
+        json={
+            "credential_configuration_id": config_id,
+            "proof": {"proof_type": "jwt", "jwt": proof_jwt},
+            "batch_number": batch_number,
+        },
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=30,
+    )
+    if credential_resp.status_code != 200:
+        return JSONResponse(status_code=credential_resp.status_code, content=credential_resp.json())
+
+    sd_jwt = credential_resp.json()["credential"]
+
+    lote_uri = BEE[f"Lote_{_slug(batch_number)}"]
+    update_query = f"""
+    PREFIX agritrust: <https://w3id.org/agrisemantics/AGRITRUST#>
+    DELETE {{ <{lote_uri}> agritrust:hasCertificationCredential ?old }}
+    WHERE {{ OPTIONAL {{ <{lote_uri}> agritrust:hasCertificationCredential ?old }} }} ;
+    INSERT DATA {{ <{lote_uri}> agritrust:hasCertificationCredential {_sparql_literal(sd_jwt)} }}
+    """
+    try:
+        update_resp = requests.post(
+            f"{FUSEKI_URL}/update",
+            data={"update": update_query},
+            auth=(FUSEKI_ADMIN_USER, FUSEKI_ADMIN_PASSWORD),
+            timeout=20,
+        )
+        update_resp.raise_for_status()
+    except requests.RequestException as exc:
+        logger.error(
+            "POST /lote/%r/retirar-certificacao: VC recebida mas falha ao "
+            "persistir no Fuseki: %s", batch_number, exc,
+        )
+        return _error(
+            502,
+            "server_error",
+            f"VC recebida do certifier, mas falha ao guardar no Fuseki da coop-a: {exc}",
+        )
+
+    logger.info("POST /lote/%r/retirar-certificacao: VC de certificação recebida e guardada.", batch_number)
+    return {"batchNumber": batch_number, "credential": sd_jwt, "status": "stored"}
