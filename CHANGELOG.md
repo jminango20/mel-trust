@@ -416,3 +416,49 @@ TransactionOrchestrator, AssetRegistry), cada trecho marcado CONFIRMADO
 repetível (2 rodadas seguidas, resultado idêntico, sem reiniciar nada
 entre elas — a rede Semear é real e persistente entre execuções, não um
 mock que reseta).
+
+## M7 — OID4VP: apresentação e validação de VC com prova de posse fresca — completo
+
+Fecha o ciclo que M8 deixou aberto para certificação (`"not_verifiable_via_query"`):
+
+- **coop-a (Holder)**: `POST /lote/{batch_number}/retirar-certificacao` —
+  roda o fluxo completo contra o certifier (pre-authorized-code → /token
+  → /nonce → /credential, assinado com a própria chave do issuer da
+  coop-a, simplificação de MVP documentada) e persiste o SD-JWT completo
+  como LITERAL no próprio Fuseki, vinculado ao lote via
+  `agritrust:hasCertificationCredential` (não RDF estruturado — a VC já é
+  auto-contida/assinada).
+- **verifier-demo**: `POST /presentation-request/{batch_number}` — gera
+  um `nonce` único por solicitação (mesmo mecanismo de `c_nonce`,
+  `secrets.token_urlsafe`), vinculado ao `batch_number` e a um
+  `request_id`, `usado: False`.
+- **coop-a**: `POST /present/{batch_number}` — busca a VC guardada,
+  monta a VP real no formato SD-JWT (`<Credential-JWT>~<Disclosures>~<KB-JWT>`):
+  Key Binding JWT (`typ: "kb+jwt"`) assinado com a MESMA chave cuja parte
+  pública já está em `cnf.jwk` da credencial (confirmado no código antes
+  de implementar — não é suposição), payload `{aud, nonce, iat, sd_hash}`.
+  `sd_hash` calculado conforme a spec SD-JWT (SHA-256 sobre
+  `"<Credential-JWT>~<Disclosures>~"`, base64url sem padding) — inclusão
+  confirmada como não tendo bloqueio técnico (sem dependência circular),
+  implementada de verdade, não omitida.
+- **verifier-demo**: `POST /present-response/{batch_number}` — recebe a
+  VP e valida, nessa ordem: nonce (existe, não usado, corresponde ao
+  lote — consumido definitivamente aqui, mesma decisão já aplicada ao
+  `c_nonce`); `sd_hash` recalculado vs. o do KB-JWT; assinatura do KB-JWT
+  verificada contra `cnf.jwk` (extraído do Credential-JWT); e só então
+  recalcula o hash do Credential-JWT+Disclosures (mesma string do
+  `sd_hash`, hasheada com `keccak256` — confirmado ser exatamente o que
+  `certifier/anchoring.py` ancorou) e compara com `dataHashes[0]` lido via
+  `AssetRegistry.getAsset()` (reaproveita a leitura on-chain de M8).
+  Resultado substitui `onChainIntegrity.certificacao`:
+  `"confirmed"` (bateu), `"mismatch"` (não bateu),
+  `"invalid_presentation"` (nonce/sd_hash/assinatura inválidos — distinto
+  de `"not_verifiable_via_query"`, que significava "não dava pra
+  verificar por este meio", situação de antes de qualquer VP existir).
+
+Testado de ponta a ponta com dado real (não só asserção de teste):
+`{"lote": "confirmed", "laudo": "confirmed", "certificacao": "confirmed"}`
+confirmado manualmente via chamada direta aos 5 passos do fluxo.
+
+22 cenários BDD passando, suíte confirmada repetível (2 rodadas seguidas,
+resultado idêntico, sem reiniciar nada entre elas).

@@ -69,20 +69,37 @@ da resposta agregada — `200` confirmado com o mesmo lote.
 - Hardcodes sem dado real removidos da credencial (`certificateReference` no
   coop-a; os 4 claims acima no certifier).
 - `scripts/test_credential_flow.py` (fluxo OID4VCI completo, flag `--demo`).
-- Fora de escopo por decisão: verificação de assinatura de credencial (fica
-  para M7/OID4VP — `docs/notas-arquitetura/m5-verificacao-assinatura-adiada.md`).
+- Verificação de assinatura de credencial: era fora de escopo por decisão
+  até M7 (`docs/notas-arquitetura/m5-verificacao-assinatura-adiada.md`) —
+  M7/OID4VP já implementado e completo (ver seção própria abaixo), a
+  assinatura do KB-JWT é verificada de verdade contra `cnf.jwk` em
+  `POST /present-response`.
+
+## M7 — OID4VP (apresentação e validação de VC) — completo
+
+coop-a (Holder) persiste a VC de certificação recebida
+(`agritrust:hasCertificationCredential`, literal); verifier-demo gera
+presentation request com nonce único por solicitação; coop-a monta e
+apresenta a VP real (Credential-JWT + disclosures + Key Binding JWT com
+`sd_hash` conforme a spec SD-JWT); verifier-demo valida a VP (nonce,
+`sd_hash`, assinatura do KB-JWT contra `cnf.jwk`) e confirma o hash do
+Credential-JWT contra o `AssetRegistry`. Resultado:
+`onChainIntegrity.certificacao` passa de `"not_verifiable_via_query"`
+(M8, sem VP) para `"confirmed"` de verdade quando uma VP real é
+apresentada — confirmado manualmente ponta a ponta. Detalhes completos:
+`CHANGELOG.md`.
 
 ## Suíte de testes BDD (`tests/`)
 
-18 cenários passando (`tests/features/*.feature`, `pytest tests/`), zero
+22 cenários passando (`tests/features/*.feature`, `pytest tests/`), zero
 falha, suíte confirmada repetível (2 rodadas seguidas sem reiniciar nada,
 resultado idêntico). 3 cenários adicionais marcados `@futuro`
 (deselecionados por padrão via `pytest.ini`).
 
 ## Fora do escopo até agora (roadmap futuro, ver CLAUDE.md)
 
-M5.5 (registro de produtor/rotação de chaves + PROV-O de certificação), M6-M7
-(revogação, SPARQL federado — já parcialmente antecipado em M9.5),
+M5.5 (registro de produtor/rotação de chaves + PROV-O de certificação), M6
+(revogação — SPARQL federado já antecipado em M9.5, não mais pendente),
 M10-M11 não iniciados.
 
 **M8 (ancoragem blockchain): completo.** Canal `"mel-trust"` criado
@@ -94,9 +111,12 @@ via `TransactionOrchestrator.submitTransaction` nos 3 eventos (lote via
 explícitos. Verificação de integridade on-chain em `verifier-demo`
 (`GET /verify` ganha `onChainIntegrity`) via `AssetRegistry.getAsset()` —
 lote e laudo comparados de verdade (hash recalculado via SPARQL
-`CONSTRUCT`), certificação marcada `"not_verifiable_via_query"` por design
-(hash do SD-JWT só verificável via apresentação da credencial, OID4VP,
-ainda não implementado). Detalhes completos:
+`CONSTRUCT`); certificação, SEM uma VP apresentada, fica
+`"not_verifiable_via_query"` por design (hash do SD-JWT só verificável
+via apresentação da credencial) — **M7 (OID4VP, ver seção própria acima)
+fecha essa lacuna**: quando uma VP real é apresentada e validada, o
+status passa a `"confirmed"`/`"mismatch"`/`"invalid_presentation"` de
+verdade. Detalhes completos:
 `CHANGELOG.md`/`docs/referencia-contratos/README.md`.
 
 **Passo 4 do fluxo de `verifier-demo`** (tabela M9.5 acima, "confere hash
