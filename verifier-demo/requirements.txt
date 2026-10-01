@@ -4,3 +4,4 @@ python-dotenv
 requests
 rdflib
 pyshacl
+web3

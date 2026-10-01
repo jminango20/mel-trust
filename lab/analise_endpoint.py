@@ -52,6 +52,7 @@ from config import (
     FUSEKI_ADMIN_USER,
     FUSEKI_URL,
 )
+from hash_utils import deterministic_nt_hash
 from shacl_pipeline import extract_violations, format_violations, insert_into_fuseki, run_shacl
 
 router = APIRouter()
@@ -257,9 +258,13 @@ async def registrar_analise(request: Request):
     # encontrado em nenhuma das duas, a ancoragem não é tentada.
     #
     # `dataHashes` usa o keccak256 do MESMO objeto `g` (rdflib.Graph) em
-    # memória, serializado como N-Triples — não uma nova consulta SPARQL ao
-    # Fuseki — para que o hash ancorado corresponda exatamente ao grafo que
-    # este endpoint acabou de montar e inserir.
+    # memória, serializado como N-Triples ORDENADO (ver hash_utils.py —
+    # mesmo achado/correção de coop-a/lote_endpoint.py: serialize(format="nt")
+    # não é determinístico em ordem entre processos Python, o que quebraria
+    # a reconstrução do hash por um verificador externo via CONSTRUCT) — não
+    # uma nova consulta SPARQL ao Fuseki — para que o hash ancorado
+    # corresponda exatamente ao grafo que este endpoint acabou de montar e
+    # inserir.
     anchoring_status = "anchoring_skipped"
     tx_hash = None
     anchoring_error = None
@@ -275,7 +280,7 @@ async def registrar_analise(request: Request):
                 anchoring_error,
             )
         else:
-            data_hash = Web3.keccak(g.serialize(format="nt").encode("utf-8"))
+            data_hash = deterministic_nt_hash(g)
             success, tx_hash, anchoring_error = anchor_lab_analysis(
                 batch_number, product_type, data_hash
             )

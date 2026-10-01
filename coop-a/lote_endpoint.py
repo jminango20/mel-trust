@@ -63,6 +63,7 @@ from web3 import Web3
 
 from anchoring import anchor_batch
 from config import FUSEKI_ADMIN_PASSWORD, FUSEKI_ADMIN_USER, FUSEKI_URL
+from hash_utils import deterministic_nt_hash
 from pre_auth_codes import generate_for_batch, reissue_for_batch
 from shacl_pipeline import extract_violations, format_violations, insert_into_fuseki, run_shacl
 
@@ -110,6 +111,55 @@ def _sparql_literal(value: str) -> str:
     """
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
+
+
+# --- CONSTRUCT usado para reconstruir, a partir do Fuseki, EXATAMENTE o
+# mesmo conjunto de triplas que `verifier-demo/onchain_verification.py`
+# reconstrói para recalcular o hash (réplica EXATA de
+# `_LOTE_CONSTRUCT_TEMPLATE` lá). Ver ACHADO DE INTEGRIDADE abaixo (passo 5)
+# para o motivo de existir aqui: não é redundante com o grafo `g` em
+# memória, é a correção do bug de divergência produtor-reaproveitado.
+_LOTE_CONSTRUCT_TEMPLATE = """
+PREFIX agritrust: <https://w3id.org/agrisemantics/AGRITRUST#>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+CONSTRUCT {
+  ?producer a agritrust:DataProducer .
+  ?producer foaf:name ?producerName .
+  ?producer agritrust:hasDID ?producerDID .
+  ?lote a ?productType .
+  ?lote agritrust:ownedBy ?producer .
+  ?lote agritrust:batchNumber ?batchNumber .
+}
+WHERE {
+  ?lote agritrust:batchNumber %(batch_number)s ;
+        a ?productType ;
+        agritrust:ownedBy ?producer .
+  BIND(%(batch_number)s AS ?batchNumber)
+  ?producer a agritrust:DataProducer ;
+            agritrust:hasDID ?producerDID .
+  OPTIONAL { ?producer foaf:name ?producerName }
+}
+"""
+
+
+def _construct_lote_graph_for_hash(batch_number: str) -> Graph:
+    """Roda, contra o PRÓPRIO Fuseki deste nó, o MESMO CONSTRUCT que
+    `verifier-demo/onchain_verification.py` roda para recalcular o hash de
+    integridade — ver ACHADO DE INTEGRIDADE na docstring do passo 5 de
+    `cadastrar_lote` para o motivo de ancorar o hash deste grafo
+    reconstruído, e não do grafo `g` em memória."""
+    query = _LOTE_CONSTRUCT_TEMPLATE % {"batch_number": _sparql_literal(batch_number)}
+    response = requests.post(
+        f"{FUSEKI_URL}/sparql",
+        data={"query": query},
+        headers={"Accept": "application/n-triples"},
+        auth=(FUSEKI_ADMIN_USER, FUSEKI_ADMIN_PASSWORD),
+        timeout=20,
+    )
+    response.raise_for_status()
+    reconstructed = Graph()
+    reconstructed.parse(data=response.text, format="nt")
+    return reconstructed
 
 
 def find_existing_lote(batch_number: str) -> str | None:
@@ -376,25 +426,65 @@ async def cadastrar_lote(request: Request):
     # resposta HTTP: sucesso ou falha só mudam `anchoringStatus`/campos
     # associados, sempre presentes explicitamente (decisão do usuário — ver
     # tests/features/ancoragem_lote.feature e
-    # docs/referencia-contratos/README.md seção 5). `dataHashes` usa o
-    # keccak256 do MESMO objeto `g` (rdflib.Graph) em memória, serializado
-    # como N-Triples — não uma nova consulta SPARQL ao Fuseki — para que o
-    # hash ancorado corresponda exatamente ao grafo que este endpoint acabou
-    # de montar e inserir, sem depender de como o triplestore normaliza/
-    # reordena triplas internamente.
+    # docs/referencia-contratos/README.md seção 5).
+    #
+    # ACHADO DE INTEGRIDADE (investigação pós-M9.5, corrige mismatch real
+    # encontrado em tests/step_defs/test_verificacao_hash_onchain.py):
+    # `dataHashes` NÃO usa mais o keccak256 do objeto `g` em memória direto.
+    # Motivo: quando `producerDID` já tem um recurso cadastrado
+    # (`is_new_producer=False`, ver passo 0b acima), as triplas
+    # rdf:type/foaf:name/hasDID do produtor DELIBERADAMENTE não são
+    # re-adicionadas a `g` (já existem no Fuseki, reafirmá-las é
+    # redundante) — então `g`, nesse caso, contém só as 3 triplas do LOTE
+    # (type/ownedBy/batchNumber), não as 6 triplas (lote + produtor) que
+    # `verifier-demo/onchain_verification.py` reconstrói via SPARQL
+    # CONSTRUCT (que sempre traz o produtor inteiro, novo ou reaproveitado,
+    # porque ele existe no Fuseki de qualquer forma). Resultado: hash
+    # ancorado sobre 3 triplas vs. hash recalculado sobre 6 — mismatch
+    # determinístico, não um problema de FORMA de serialização (confirmado:
+    # Jena/Fuseki e rdflib produzem N-Triples byte-idênticos para os
+    # literais simples usados aqui, sem/com datatype — não é o caso
+    # `^^xsd:string`). Quando o produtor é novo (`is_new_producer=True`),
+    # `g` já continha as 6 triplas e por isso o mismatch não aparecia nesse
+    # caso — só se manifestava com DID de produtor reaproveitado (exatamente
+    # o cenário do teste, que reusa o mesmo PRODUCER_DID em toda execução).
+    #
+    # CORREÇÃO: depois do INSERT (passo 3), reconstrói via
+    # `_construct_lote_graph_for_hash` o MESMO conjunto de triplas que o
+    # verificador vai reconstruir (CONSTRUCT idêntico ao de
+    # `onchain_verification.py`) e ancora o hash DESSE grafo — garante, por
+    # construção, que o hash ancorado é sempre recalculável por quem fizer
+    # a mesma consulta, independente de o produtor ser novo ou reaproveitado.
+    # Custo: um round-trip SPARQL extra ao próprio Fuseki (aceitável — rede
+    # zero-gas, chamada local). `deterministic_nt_hash` continua a mesma
+    # (serialize nt -> sorted() -> keccak) — só MUDOU qual grafo é
+    # hasheado, não como o hash é calculado.
     anchoring_status = "anchoring_skipped"
     tx_hash = None
     anchoring_error = None
     if batch_number is not None:
-        data_hash = Web3.keccak(g.serialize(format="nt").encode("utf-8"))
-        nature_id = product_type or ""
-        success, tx_hash, anchoring_error = anchor_batch(batch_number, nature_id, data_hash)
-        if success:
-            anchoring_status = "anchored"
-            logger.info("POST /lote: lote %r ancorado on-chain, txHash=%s", batch_number, tx_hash)
-        else:
+        try:
+            hash_graph = _construct_lote_graph_for_hash(batch_number)
+            data_hash = deterministic_nt_hash(hash_graph)
+        except Exception as exc:  # noqa: BLE001 - lote já inserido, nunca quebra a resposta HTTP
             anchoring_status = "anchoring_failed"
-            logger.error("POST /lote: falha ao ancorar lote %r on-chain: %s", batch_number, anchoring_error)
+            anchoring_error = (
+                f"Erro ao reconstruir grafo do lote para cálculo do hash de "
+                f"ancoragem: {type(exc).__name__}: {exc}"
+            )
+            logger.error(
+                "POST /lote: falha ao reconstruir grafo do lote %r para hash: %s",
+                batch_number, anchoring_error,
+            )
+        else:
+            nature_id = product_type or ""
+            success, tx_hash, anchoring_error = anchor_batch(batch_number, nature_id, data_hash)
+            if success:
+                anchoring_status = "anchored"
+                logger.info("POST /lote: lote %r ancorado on-chain, txHash=%s", batch_number, tx_hash)
+            else:
+                anchoring_status = "anchoring_failed"
+                logger.error("POST /lote: falha ao ancorar lote %r on-chain: %s", batch_number, anchoring_error)
     else:
         # Sem batchNumber não há newAssetIds determinístico nem processo
         # aplicável a ancorar (ver docstring acima sobre o caso de borda

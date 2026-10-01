@@ -73,6 +73,7 @@ from pyshacl import validate
 from rdflib import BNode, Graph, Literal, Namespace, RDF, XSD
 
 from config import COOP_A_SPARQL_URL, COOP_B_SPARQL_SERVICE_URL, CERTIFIER_SPARQL_SERVICE_URL
+from onchain_verification import verify_onchain_integrity
 
 router = APIRouter()
 
@@ -490,4 +491,13 @@ def verify_batch(batch_number: str, x_access_purpose: str | None = Header(None))
             },
         )
 
-    return {"batchNumber": batch_number, **result}
+    # Verificação de integridade on-chain (M9.5, segunda fatia) — compara o
+    # hash ancorado em cada um dos 3 assets (lote, laudo, certificação) com
+    # o hash recalculado a partir do MESMO dado recebido via SPARQL
+    # federado acima (lote/laudo: comparação real; certificação: hash do
+    # SD-JWT, não reconstruível por este canal — ver
+    # onchain_verification.py). Melhor esforço: RPC/túnel fora do ar nunca
+    # quebra esta resposta, só devolve "unavailable" nos 3 campos.
+    on_chain_integrity = verify_onchain_integrity(batch_number)
+
+    return {"batchNumber": batch_number, **result, "onChainIntegrity": on_chain_integrity}
