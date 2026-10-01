@@ -330,3 +330,27 @@ def verify_onchain_integrity(batch_number: str) -> dict:
             batch_number, type(exc).__name__, exc,
         )
         return {"lote": "unavailable", "laudo": "unavailable", "certificacao": "unavailable"}
+
+
+def read_certification_data_hash(batch_number: str) -> tuple[bool, bytes | None]:
+    """Usado por `present_response_endpoint.py` (M9.7) — quando uma VP real
+    é recebida, o hash do Credential-JWT (recalculado pelo chamador, não
+    aqui) é comparado contra o `dataHashes[0]` ancorado DE VERDADE, em vez
+    do placeholder `"not_verifiable_via_query"` que `verify_onchain_integrity`
+    devolve sozinho (sem VP, não há como recalcular esse hash — ver
+    docstring da função acima).
+
+    Retorna `(exists, data_hash_ou_None)`. Propaga exceção de conectividade
+    (RPC fora do ar) — quem chama decide o fallback, diferente de
+    `verify_onchain_integrity` (que sempre engole erro pra não quebrar
+    `GET /verify`, que tem valor sem checagem on-chain; aqui a checagem É
+    o propósito da chamada)."""
+    _w3, asset_registry = _get_w3_and_asset_registry()
+    certificacao_asset_id = Web3.keccak(text=f"{batch_number}-certification")
+    asset, exists = asset_registry.functions.getAsset(CHANNEL_NAME, certificacao_asset_id).call()
+    if not exists:
+        return False, None
+    data_hashes = asset[7]  # dataHashes, índice 7 no struct Asset
+    if not data_hashes:
+        return True, None
+    return True, bytes(data_hashes[0])

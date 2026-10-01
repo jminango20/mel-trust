@@ -37,12 +37,29 @@ _nonce_to_request_id: dict[str, str] = {}
 
 
 def get_request_by_nonce(nonce: str) -> dict | None:
-    """Helper para uso futuro pelo endpoint de apresentação (ainda não
-    implementado): resolve a solicitação completa a partir do nonce."""
+    """Usado por `present_response_endpoint.py` (M9.7): resolve a
+    solicitação completa a partir do nonce recebido dentro do KB-JWT."""
     request_id = _nonce_to_request_id.get(nonce)
     if request_id is None:
         return None
     return _issued_presentation_requests.get(request_id)
+
+
+def mark_nonce_used(nonce: str) -> bool:
+    """Marca o nonce como usado — CONSUMO DEFINITIVO do presentation
+    request, usado por `present_response_endpoint.py` (M9.7) assim que a
+    VP é recebida (decisão já tomada: quem CONSOME a prova é quem valida
+    e marca como usado, mesmo padrão do `c_nonce` em `nonce_endpoint.py`).
+    Retorna `True` se o nonce existia e foi marcado agora, `False` se não
+    existia (nunca emitido, ou processo reiniciou)."""
+    request_id = _nonce_to_request_id.get(nonce)
+    if request_id is None:
+        return False
+    entry = _issued_presentation_requests.get(request_id)
+    if entry is None:
+        return False
+    entry["usado"] = True
+    return True
 
 
 @router.post("/presentation-request/{batch_number}")

@@ -5,3 +5,10 @@ requests
 rdflib
 pyshacl
 web3
+
+# M9.7: decodifica JWT (PyJWT, sem verificar assinatura — mesma
+# simplificação de MVP já usada no resto do projeto) e verifica a
+# assinatura do KB-JWT contra cnf.jwk (jwcrypto) — ver
+# present_response_endpoint.py.
+pyjwt
+jwcrypto
