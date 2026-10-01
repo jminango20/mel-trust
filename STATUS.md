@@ -52,7 +52,7 @@ Fluxo de verificação definido no `CLAUDE.md` (auditor/comprador):
 | 1 | SPARQL federado real (`SERVICE`) contra coop-a + coop-b + certifier | ✅ testado e confirmado (2026-09-17) |
 | 2 | Checagem ODRL de propósito (`X-Access-Purpose` vs. política real em `ontology/instances.ttl`) | ✅ testado e confirmado (2026-09-18) |
 | 3 | Validação SHACL da resposta agregada (`VerifierResponseShape`, arquivo próprio) | ✅ testado e confirmado (2026-09-18) |
-| 4 | Confere hash no `AssetRegistry.sol` | ⛔ não iniciado — depende de M8 (blockchain/contrato ainda não existe) |
+| 4 | Confere hash no `AssetRegistry.sol` | ✅ implementado via M8 (`onChainIntegrity` em `GET /verify`) — lote/laudo comparados de verdade, certificação `"not_verifiable_via_query"` por design |
 
 Passos 2 e 3 testados manualmente por Juan em 2026-09-18 contra dado real
 (`MS-2026-042`, não só caso sintético): ODRL — `400` (header ausente),
@@ -74,9 +74,10 @@ da resposta agregada — `200` confirmado com o mesmo lote.
 
 ## Suíte de testes BDD (`tests/`)
 
-13 cenários passando (`tests/features/*.feature`, `pytest tests/`), zero
-falha. 3 cenários adicionais marcados `@futuro` (deselecionados por
-padrão via `pytest.ini`).
+18 cenários passando (`tests/features/*.feature`, `pytest tests/`), zero
+falha, suíte confirmada repetível (2 rodadas seguidas sem reiniciar nada,
+resultado idêntico). 3 cenários adicionais marcados `@futuro`
+(deselecionados por padrão via `pytest.ini`).
 
 ## Fora do escopo até agora (roadmap futuro, ver CLAUDE.md)
 
@@ -84,7 +85,20 @@ M5.5 (registro de produtor/rotação de chaves + PROV-O de certificação), M6-M
 (revogação, SPARQL federado — já parcialmente antecipado em M9.5),
 M10-M11 não iniciados.
 
-**M8 (ancoragem blockchain)**: setup feito (canal `"mel-trust"` criado
-on-chain, 3 contas adicionadas como membros — ver `CHANGELOG.md`);
-integração de ancoragem (`AssetRegistry.sol` via `web3.py`, chamada real a
-partir de `certifier`/`verifier-demo`) ainda pendente.
+**M8 (ancoragem blockchain): completo.** Canal `"mel-trust"` criado
+on-chain, 4 contas membros (coop-a, coop-b, certifier, lab). Schema +
+processos registrados (`SchemaRegistry`/`ProcessRegistry`). Ancoragem real
+via `TransactionOrchestrator.submitTransaction` nos 3 eventos (lote via
+`POST /lote`, laudo via `POST /analise`, certificação via
+`POST /credential`), cada resposta com `anchoringStatus`/`txHash`
+explícitos. Verificação de integridade on-chain em `verifier-demo`
+(`GET /verify` ganha `onChainIntegrity`) via `AssetRegistry.getAsset()` —
+lote e laudo comparados de verdade (hash recalculado via SPARQL
+`CONSTRUCT`), certificação marcada `"not_verifiable_via_query"` por design
+(hash do SD-JWT só verificável via apresentação da credencial, OID4VP,
+ainda não implementado). Detalhes completos:
+`CHANGELOG.md`/`docs/referencia-contratos/README.md`.
+
+**Passo 4 do fluxo de `verifier-demo`** (tabela M9.5 acima, "confere hash
+no `AssetRegistry.sol`"): implementado como parte deste M8, não mais
+"não iniciado".

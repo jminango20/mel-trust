@@ -347,3 +347,72 @@ consulta federada + SHACL regulatório aprovar o lote. Cobertura E2E
 confirmada com mel nativo + meliponário + licença ambiental. `known-issues.md`
 atualizado com 2 pendências conscientes: bypass legado do certifier sem
 uso único, e ausência de autenticação inter-nó no novo endpoint.
+
+## M8 — ancoragem real dos 3 eventos (lote, laudo, certificação) — completo
+
+Schema (`honey-validation-shapes`, `SchemaRegistry`) e processos
+(`honey-batch-registration`, `honey-lab-analysis`,
+`honey-certification-document` — um por `natureId`, `HoneyApis`/
+`HoneyNativeStinglessBee`) registrados no `ProcessRegistry`, canal
+`"mel-trust"`. `lab` ganhou conta Besu própria
+(`lab/keys/lab-besu.key`) e foi adicionado como membro do canal
+(`addChannelMembers`, assinado pela conta admin) — 4 nós membros agora
+(coop-a, coop-b, certifier, lab).
+
+**Ancoragem real via `TransactionOrchestrator.submitTransaction`** (ABI
+void, `outputs=[]` — achado desta entrega: a suposição inicial de retorno
+`bytes32` causava `BadFunctionCallOutput`, não revert):
+- `coop-a`/`coop-b`: `POST /lote` ancora o lote como asset (`createAsset`,
+  `processId="honey-batch-registration"`) depois do insert no Fuseki.
+- `lab`: `POST /analise` ancora o laudo como documento filho
+  (`createDocument`, `processId="honey-lab-analysis"`,
+  `parentAssetId=keccak256(batchNumber)` — vincula ao asset do lote).
+- `certifier`: `POST /credential` ancora a VC de certificação como
+  documento filho (`processId="honey-certification-document"` — processo
+  NOVO, `action=9`/`CREATE_DOCUMENT`; o processo `"honey-certification"`
+  original, criado com `action=0`/`CREATE_ASSET` por engano numa etapa
+  anterior desta mesma entrega, fica ÓRFÃO, documentado, sem uso
+  planejado — contrato não tem delete de processo).
+
+Resposta dos 3 endpoints ganha `anchoringStatus` explícito (`"anchored"`
+com `txHash`, ou `"anchoring_failed"` com `anchoringError`, nunca ausente
+silenciosamente) — falha de ancoragem NUNCA reverte a inserção no Fuseki
+nem bloqueia a emissão da credencial (decisão do usuário).
+
+**Verificação de integridade on-chain** em `verifier-demo` (`GET
+/verify/{batch_number}` ganha campo `onChainIntegrity`): lê os 3 assetIds
+via `AssetRegistry.getAsset()` (assinatura confirmada nesta entrega, struct
+de 16 campos) e, para lote/laudo, recalcula o hash a partir de uma
+reconstrução via SPARQL `CONSTRUCT` contra o Fuseki de origem, comparando
+com `dataHashes[0]` do contrato (`"confirmed"`/`"mismatch"`/
+`"not_anchored"`). Certificação é marcada `"not_verifiable_via_query"` por
+design — o hash ancorado é do SD-JWT completo (salt aleatório por
+disclosure, nunca persistido em nenhum Fuseki), só verificável quando o
+holder apresenta a credencial (OID4VP, ainda não implementado — ver
+`docs/notas-arquitetura/m5-verificacao-assinatura-adiada.md`).
+
+**2 bugs de hash corrigidos** (`coop-a` e depois `coop-b`,
+`lote_endpoint.py`):
+1. Não-determinismo: `rdflib.Graph.serialize(format="nt")` não garante
+   ordem de linha entre processos Python — o mesmo grafo serializado em
+   processos diferentes produzia hashes diferentes. Corrigido com
+   `hash_utils.py`/`deterministic_nt_hash` (ordena as linhas N-Triples
+   antes de hashear).
+2. Incompletude: o grafo em memória só ganhava as triplas do produtor
+   (`rdf:type`/`foaf:name`/`hasDID`) quando ele era NOVO — quando
+   reaproveitado (`find_existing_producer`), o hash ancorado refletia só
+   3 triplas (lote), não as 6 que um verificador externo reconstrói via
+   `CONSTRUCT` (produtor existe no Fuseki de qualquer forma). Corrigido
+   ancorando o hash de um grafo SEMPRE reconstruído via o mesmo
+   `CONSTRUCT` que o verifier usa, não o objeto `g` em memória.
+
+`docs/referencia-contratos/README.md` criado nesta entrega — cópia
+literal das interfaces confirmadas dos 6 contratos (AddressDiscovery,
+AccessChannelManager, SchemaRegistry, ProcessRegistry,
+TransactionOrchestrator, AssetRegistry), cada trecho marcado CONFIRMADO
+(testado contra o node real) ou NÃO CONFIRMADO.
+
+18 cenários BDD passando (`tests/features/*.feature`), suíte confirmada
+repetível (2 rodadas seguidas, resultado idêntico, sem reiniciar nada
+entre elas — a rede Semear é real e persistente entre execuções, não um
+mock que reseta).

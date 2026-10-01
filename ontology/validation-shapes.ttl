@@ -100,6 +100,45 @@
         sh:message "geo:asWKT deve seguir o formato POINT(lon lat)"@pt
     ] .
 
+# [SHACL] Cardinalidade mínima de um certificado válido (issuer, subject,
+# data de emissão) — adicionada com autorização do Ivan Bergier: ontologia
+# aberta a extensão, mesma base usada para HoneyApisIdentificationShape/
+# GeoPointWKTShape (minCount/geo). `agritrust:Certificate` já é o termo
+# usado no vocabulário (ver ontology/instances.ttl, `:Certificado_Organico_Apiario`/
+# `:Certificado_Analise_Nativa`, e ontology/bee-extension.ttl,
+# subclasses de `agritrust:Certificate`) — não é um termo novo. Predicados
+# (`vc:issuer`/`vc:credentialSubject`/`vc:issuanceDate`) também já em uso
+# nas mesmas instâncias, vocabulário W3C VC (`vc:` já declarado no topo
+# deste arquivo).
+#
+# NÃO implementada em código ainda (nenhum endpoint monta um recurso
+# `agritrust:Certificate` hoje — `certifier/credential_endpoint.py` emite
+# a VC como SD-JWT, não como instância RDF persistida). Disponível para
+# uso futuro, quando M5.5 modelar `certificateType`/`certificateNumber`/
+# `analysisActivity` via PROV-O (ver
+# docs/notas-arquitetura/certifier-claims-hardcoded-m4.md) — shape nova
+# não afeta nenhum cenário existente, já que nada a referencia ativamente.
+:CertificateShape a sh:NodeShape ;
+    sh:targetClass agritrust:Certificate ;
+    sh:property [
+        sh:path vc:issuer ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Certificado precisa ter emissor (issuer)"@pt
+    ] ;
+    sh:property [
+        sh:path vc:credentialSubject ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Certificado precisa referenciar o lote (credentialSubject)"@pt
+    ] ;
+    sh:property [
+        sh:path vc:issuanceDate ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Certificado precisa ter data de emissão (issuanceDate)"@pt
+    ] .
+
 # [SHACL] Aviso para Umidade em Mel Nativo (Portaria 1.439/2025)
 :HoneyNativeMoistureShape a sh:NodeShape ;
     sh:targetClass :HoneyNativeStinglessBee ;
@@ -107,7 +146,12 @@
         sh:path :hasMoistureContent ;
         sh:maxInclusive "23.0"^^xsd:decimal ;
         sh:severity sh:Info ;
-        sh:message "Umidade dentro do limite para aproveitamento condicional (Portaria 1.439/2025)"@pt
+        # Correção de redação (confirmada pelo Ivan): sh:maxInclusive só
+        # gera um resultado SHACL quando o valor EXCEDE o limite — ou
+        # seja, este sh:Info dispara para umidade ACIMA de 23%, nunca
+        # "dentro" dele. Mensagem original dizia o oposto do que a
+        # constraint realmente detecta.
+        sh:message "Umidade acima de 23% - fora do padrão de aproveitamento direto, mas dentro da faixa de aproveitamento condicional (Portaria 1.439/2025)"@pt
     ] ;
     sh:property [
         sh:path :hasMoistureContent ;
