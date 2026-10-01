@@ -50,6 +50,8 @@ recurso de produtor para o mesmo DID. Só se não existir nenhum é que uma
 URI nova é gerada deterministicamente a partir do `producerDID`
 (`_slug`), do mesmo jeito que antes.
 """
+import base64
+import hashlib
 import json
 import logging
 import re
@@ -653,3 +655,124 @@ async def retirar_certificacao(batch_number: str):
 
     logger.info("POST /lote/%r/retirar-certificacao: VC de certificação recebida e guardada.", batch_number)
     return {"batchNumber": batch_number, "credential": sd_jwt, "status": "stored"}
+
+
+def _busca_credencial_guardada(batch_number: str) -> str | None:
+    """Consulta o PRÓPRIO Fuseki da coop-a por `agritrust:hasCertificationCredential`
+    vinculado ao lote (gravado por `/retirar-certificacao`). Retorna o
+    SD-JWT (string) ou None se nada foi guardado ainda para esse lote."""
+    lote_uri = BEE[f"Lote_{_slug(batch_number)}"]
+    query = f"""
+    PREFIX agritrust: <https://w3id.org/agrisemantics/AGRITRUST#>
+    SELECT ?credencial WHERE {{
+      <{lote_uri}> agritrust:hasCertificationCredential ?credencial .
+    }}
+    LIMIT 1
+    """
+    resp = requests.post(
+        f"{FUSEKI_URL}/sparql",
+        data={"query": query},
+        headers={"Accept": "application/sparql-results+json"},
+        auth=(FUSEKI_ADMIN_USER, FUSEKI_ADMIN_PASSWORD),
+        timeout=20,
+    )
+    resp.raise_for_status()
+    bindings = resp.json().get("results", {}).get("bindings", [])
+    if not bindings:
+        return None
+    return bindings[0]["credencial"]["value"]
+
+
+def _compute_sd_hash(credential_jwt: str, disclosures: list[str]) -> str:
+    """Calcula `sd_hash` conforme draft-ietf-oauth-selective-disclosure-jwt:
+    hash (mesmo algoritmo do `_sd_alg` da credencial — `"sha-256"`, ver
+    `certifier/credential_endpoint.py`/lib `sd_jwt`) sobre a concatenação
+    EXATA `"<Credential-JWT>~<Disclosure1>~<Disclosure2>~...~"` — tudo que
+    vem ANTES do KB-JWT na VP final, incluindo o `~` final que o separa do
+    KB-JWT. Resultado codificado base64url SEM padding (mesma convenção
+    JWS/JWT de sempre). Não há dependência circular: essa string é
+    conhecida integralmente ANTES de montar/assinar o KB-JWT (ela não
+    contém o KB-JWT em si)."""
+    pre_kb = "~".join([credential_jwt, *disclosures, ""])
+    digest = hashlib.sha256(pre_kb.encode("utf-8")).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+def _build_kb_jwt(audience: str, nonce: str, sd_hash: str) -> str:
+    """Monta o Key Binding JWT (SD-JWT VC, apresentação) assinado com a
+    MESMA chave do issuer da coop-a (`keys.get_issuer_key()`) — é a chave
+    cuja parte PÚBLICA já está em `cnf.jwk` da VC de certificação
+    (confirmado em `certifier/credential_endpoint.py`: `cnf.jwk` vem do
+    header `jwk` do proof JWT que `_build_proof_jwt` já assina com essa
+    mesma chave — ver docstring de tests/step_defs/test_apresentacao_vp.py
+    para o levantamento completo). `typ: "kb+jwt"` é o valor padrão da
+    spec SD-JWT para esse tipo de JWT (distinto de `_PROOF_JWT_TYP`, usado
+    na EMISSÃO, não na apresentação).
+
+    `sd_hash` CONFIRMADO/incluído (campo obrigatório da spec, ver
+    `_compute_sd_hash`) — vincula este KB-JWT a ESTA apresentação
+    específica (este Credential-JWT + estas Disclosures reveladas), contra
+    reuso em outra apresentação."""
+    key = get_issuer_key()
+    header = {"alg": "EdDSA", "typ": "kb+jwt"}
+    payload = {"aud": audience, "nonce": nonce, "iat": int(time.time()), "sd_hash": sd_hash}
+    jws = JWS(json.dumps(payload).encode())
+    jws.add_signature(key, alg="EdDSA", protected=json.dumps(header))
+    return jws.serialize(compact=True)
+
+
+@router.post("/present/{batch_number}")
+async def apresentar_certificacao(batch_number: str, request: Request):
+    """Apresenta a VC de certificação já guardada (ver
+    `/retirar-certificacao`) em resposta a um presentation request do
+    verifier-demo (`POST /presentation-request/{batch_number}`, nonce
+    recebido no corpo). Monta a VP completa no formato SD-JWT:
+    `<Credential-JWT>~<Disclosures>~<KB-JWT>`.
+
+    Revela TODAS as disclosures disponíveis — seleção granular (revelar
+    só um subconjunto) fica para depois, fora do escopo desta entrega.
+
+    DECISÃO (consumo do nonce, documentada aqui por pedido explícito, não
+    decidida silenciosamente): este endpoint NÃO marca o nonce como usado
+    no store do verifier-demo — esse store pertence a outro processo
+    (verifier-demo/presentation_request_endpoint.py), e marcar um recurso
+    de outro nó como "usado" a partir de quem o CONSOME, sem o dono validar
+    primeiro, inverteria a responsabilidade de verificação. Mesmo padrão
+    já usado no projeto para `c_nonce` (nonce_endpoint.py): quem CONSOME
+    a prova (o credential endpoint, lá; o endpoint de recebimento de VP,
+    aqui) é quem valida e marca como usado — não existe ainda em
+    verifier-demo (fora do escopo desta entrega), então o nonce fica
+    "usado=False" no store de lá até esse endpoint futuro existir."""
+    try:
+        body = await request.json()
+    except Exception:
+        return _error(400, "invalid_request", "Corpo da requisição não é JSON válido.")
+
+    if not isinstance(body, dict):
+        return _error(400, "invalid_request", "Corpo da requisição deve ser um objeto JSON.")
+
+    nonce = body.get("nonce")
+    audience = body.get("audience")
+    if not nonce or not audience:
+        return _error(400, "invalid_request", "Campos obrigatórios ausentes: nonce, audience.")
+
+    sd_jwt = _busca_credencial_guardada(batch_number)
+    if sd_jwt is None:
+        return _error(
+            404,
+            "credencial_nao_encontrada",
+            f"Nenhuma VC de certificação guardada para o lote {batch_number!r} "
+            f"(rode POST /lote/{batch_number}/retirar-certificacao primeiro).",
+        )
+
+    segments = sd_jwt.split("~")
+    credential_jwt = segments[0]
+    disclosures = [s for s in segments[1:] if s]
+
+    sd_hash = _compute_sd_hash(credential_jwt, disclosures)
+    kb_jwt = _build_kb_jwt(audience, nonce, sd_hash)
+
+    vp = "~".join([credential_jwt, *disclosures, kb_jwt])
+
+    logger.info("POST /present/%r: VP montada e apresentada.", batch_number)
+    return {"batchNumber": batch_number, "vp": vp}
