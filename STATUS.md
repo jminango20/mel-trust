@@ -98,7 +98,7 @@ Credential-JWT contra o `AssetRegistry`. Resultado:
 apresentada — confirmado manualmente ponta a ponta. Detalhes completos:
 `CHANGELOG.md`.
 
-## Outbox de ancoragem (coop-a e coop-b) — implementado, confirmação do Juan pendente
+## Outbox de ancoragem (coop-a e coop-b) — ✅ testado e confirmado (2026-10-09)
 
 `POST /lote` grava uma `AnchoringTask` (recurso separado do lote — não
 altera o hash ancorado) `pending` → ancora → `anchored`. `POST
@@ -114,10 +114,11 @@ batchNumber sintético. Detalhes: `CHANGELOG.md`.
 
 26 testes passando (`tests/features/*.feature`, `pytest tests/`), zero
 falha, suíte repetível (2 rodadas seguidas, resultado idêntico). São os 22
-cenários anteriores (confirmados por Juan) + 4 do outbox de ancoragem
-(2 cenários × coop-a/coop-b, ver seção abaixo — rodados pelo agente, ainda
-sem confirmação do Juan). 3 cenários adicionais marcados `@futuro`
-(deselecionados por padrão via `pytest.ini`).
+cenários anteriores + 4 do outbox de ancoragem (2 cenários ×
+coop-a/coop-b, ver seção acima), todos confirmados por Juan. **Só passa com a
+máquina acordada e o túnel do Besu ativo** (ver `docs/known-issues.md`).
+3 cenários adicionais marcados `@futuro` (deselecionados por padrão via
+`pytest.ini`).
 
 ## Fora do escopo até agora (roadmap futuro, ver CLAUDE.md)
 

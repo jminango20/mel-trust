@@ -463,7 +463,7 @@ confirmado manualmente via chamada direta aos 5 passos do fluxo.
 22 cenários BDD passando, suíte confirmada repetível (2 rodadas seguidas,
 resultado idêntico, sem reiniciar nada entre elas).
 
-## Outbox de ancoragem (coop-a e coop-b) — retry sem reenvio — implementado; confirmação do Juan pendente
+## Outbox de ancoragem (coop-a e coop-b) — retry sem reenvio — ✅ testado e confirmado
 
 Falha de ancoragem em `POST /lote` (`anchoring_failed`) deixava o lote no
 Fuseki sem nenhum caminho de recuperação. Agora há uma marca de ancoragem
@@ -508,6 +508,20 @@ por lote e um retry manual que não reenvia transação já feita.
   ancoragem reverte e a tarefa fica `pending` sem lote.
 
 Suíte: 26 passed, 3 deselected (`@futuro`) — os 22 anteriores + 4 do outbox
-(2 cenários × coop-a/coop-b), rodada 2× seguidas sem diferença, executada
-pelo agente. **Fora do escopo**: `lab` e `certifier` ainda sem outbox (ver
-`docs/known-issues.md`). Confirmação manual do Juan ainda pendente.
+(2 cenários × coop-a/coop-b). Estável em 5 rodadas seguidas e em execuções
+posteriores (última: `26 passed in 311s`).
+
+**Confirmado por Juan em 2026-10-09** (leu o resultado `26 passed` da suíte).
+
+**Ressalva — dependência de ambiente**: a suíte só passa com a máquina
+acordada e o túnel SSH do Besu ativo (`127.0.0.1:8545`). Suspensão do Windows
+ou queda do túnel derruba a rodada; o preflight de `tests/conftest.py` agora
+encerra a suíte na primeira falha com "RPC/túnel não respondeu", e os módulos
+de ancoragem esperam o recibo no máximo 60 s por transação. Duas rodadas
+anteriores falharam sem causa comprovada. Ver `docs/known-issues.md`.
+
+**Fora do escopo / pendências conhecidas**: `lab` e `certifier` ainda sem
+outbox; allowlist de `tests/conftest.py` exige o prefixo de todo teste novo
+com batchNumber sintético; o retry pode correr contra uma tx ainda em voo
+(`Known transaction` — fica `pending`, correção `in_flight` proposta, não
+implementada). Tudo em `docs/known-issues.md`.
