@@ -142,7 +142,15 @@ def _besu_nonce(node: dict) -> int:
 def _run_retry(node: dict, context):
     """Executa o retry e guarda {body, nonce_before, nonce_after} em context['runs']."""
     nonce_before = _besu_nonce(node)
-    resp = requests.post(f"{node['url']}/anchoring/retry", timeout=120)
+    try:
+        # Teto: o retry pode enviar várias tx; cada uma tem timeout de 60s no nó.
+        resp = requests.post(f"{node['url']}/anchoring/retry", timeout=180)
+    except requests.exceptions.Timeout:
+        pytest.fail(
+            "POST /anchoring/retry não respondeu em 180s — RPC/túnel não respondeu "
+            "(túnel SSH do Besu fora ou máquina suspensa?)",
+            pytrace=False,
+        )
     assert resp.status_code == 200, (
         f"POST /anchoring/retry esperado 200, veio {resp.status_code}: {resp.text}"
     )

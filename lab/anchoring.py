@@ -48,9 +48,29 @@ vez nesta sessão e o contrato não é upgradeable neste MVP.
 import logging
 import os
 
+from requests.exceptions import ConnectionError as _ReqConnectionError
+from requests.exceptions import Timeout as _ReqTimeout
 from web3 import Web3
+from web3.exceptions import TimeExhausted
 
 logger = logging.getLogger(__name__)
+
+# Timeout por transação: espera pelo recibo (e, via request_kwargs do
+# HTTPProvider, cada chamada RPC individual: 10s) falha RÁPIDO em vez de
+# ficar pendurada quando o túnel SSH cai ou a máquina suspende.
+RPC_TX_TIMEOUT_S = 60
+
+
+def _describe_rpc_error(exc: Exception) -> str:
+    """Mensagem de erro de ancoragem. Timeout/conexão recusada no RPC viram
+    uma frase explícita ("RPC/túnel não respondeu"), em vez de só o nome
+    cru da exceção da lib."""
+    if isinstance(exc, (TimeExhausted, _ReqConnectionError, _ReqTimeout)):
+        return (
+            f"RPC/túnel não respondeu (timeout de {RPC_TX_TIMEOUT_S}s por transação; "
+            f"túnel SSH fora ou máquina suspensa?): {type(exc).__name__}: {exc}"
+        )
+    return f"{type(exc).__name__}: {exc}"
 
 RPC_URL = "http://localhost:8545"
 EXPECTED_CHAIN_ID = 648
@@ -229,7 +249,7 @@ def anchor_lab_analysis(
         )
         signed_tx = account.sign_transaction(tx)
         tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-        receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=RPC_TX_TIMEOUT_S)
         # web3.py 8.x: HexBytes.hex() retorna SEM o prefixo "0x" — normaliza
         # aqui pra convenção usual de tx hash Ethereum (o hash em si não
         # muda, só a representação em string).
@@ -249,6 +269,6 @@ def anchor_lab_analysis(
         return False, None, error_msg
 
     except Exception as exc:  # noqa: BLE001 - nunca deixa exceção escapar (rede/revert/timeout/gas)
-        error_msg = f"{type(exc).__name__}: {exc}"
+        error_msg = _describe_rpc_error(exc)
         logger.error("Erro ao ancorar laudo do lote %r on-chain: %s", batch_number, error_msg)
         return False, None, error_msg

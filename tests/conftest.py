@@ -66,3 +66,37 @@ def _purge_orphan_anchoring_tasks():
     _purge_orphan_tasks()
     yield
     _purge_orphan_tasks()
+
+
+# 127.0.0.1, não `localhost`: no Windows `localhost` tenta ::1 e depois IPv4, e cada
+# tentativa recusada custa ~2s. Medido (eth_chainId, 4 amostras por caso): porta
+# fechada 4,1s (localhost) vs 2,05s (127.0.0.1); porta que não responde 7,07s vs
+# 5,02s; túnel de pé, igual nos dois (~0,15s).
+_RPC_URL = "http://127.0.0.1:8545"
+
+
+@pytest.fixture(autouse=True)
+def _rpc_tunnel_alive():
+    """Se o RPC do Besu (túnel SSH) não responde, ENCERRA a suíte inteira
+    (`pytest.exit`) na primeira falha, com mensagem clara — sem arrastar os
+    demais testes (cada um falharia igual, ~2-5s de espera por teste) e sem
+    deixar nenhum pendurado ou falhando com um "unavailable" genérico lá na
+    frente. Roda antes de CADA teste: se o túnel cair no meio da suíte (ou a
+    máquina suspender), o próximo teste aponta a causa. Custo com o túnel de
+    pé: ~0,15s por teste."""
+    try:
+        r = requests.post(
+            _RPC_URL,
+            json={"jsonrpc": "2.0", "id": 1, "method": "eth_chainId", "params": []},
+            timeout=5,
+        )
+        ok = r.status_code == 200 and r.json().get("result") == "0x288"  # chain 648
+    except (requests.RequestException, ValueError):
+        ok = False
+    if not ok:
+        pytest.exit(
+            f"RPC/túnel não respondeu em {_RPC_URL} (eth_chainId, timeout 5s) — "
+            "túnel SSH do Besu fora ou máquina suspensa? Suba o túnel e rode de novo.",
+            returncode=3,
+        )
+    yield
