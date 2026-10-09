@@ -104,7 +104,10 @@ apresentada — confirmado manualmente ponta a ponta. Detalhes completos:
 altera o hash ancorado) `pending` → ancora → `anchored`. `POST
 /anchoring/retry` (manual) consulta `getAsset` antes de reenviar: hash bate
 → só marca `anchored`; asset ausente → envia a tx; hash diferente →
-`mismatch`, reportado a cada retry e nunca marcado `anchored`. **Lacunas
+`mismatch`, reportado a cada retry e nunca marcado `anchored`; se o envio
+responde `Known transaction` (tx já na fila) o resultado é `in_flight` — a
+tarefa segue `pending` e a próxima passada conclui (implementado, confirmação
+do Juan pendente). **Lacunas
 conhecidas** (`docs/known-issues.md`): `lab` e `certifier` ainda sem outbox
 (falha fica `anchoring_failed` sem retry); allowlist de
 `tests/conftest.py` precisa de atualização a cada teste novo com
@@ -112,11 +115,13 @@ batchNumber sintético. Detalhes: `CHANGELOG.md`.
 
 ## Suíte de testes BDD (`tests/`)
 
-26 testes passando (`tests/features/*.feature`, `pytest tests/`), zero
+30 testes passando (`tests/features/*.feature`, `pytest tests/`), zero
 falha, suíte repetível (2 rodadas seguidas, resultado idêntico). São os 22
 cenários anteriores + 4 do outbox de ancoragem (2 cenários ×
-coop-a/coop-b, ver seção acima), todos confirmados por Juan. **Só passa com a
-máquina acordada e o túnel do Besu ativo** (ver `docs/known-issues.md`).
+coop-a/coop-b, ver seção acima), todos confirmados por Juan, + 4 do
+tratamento de `in_flight`/revert real (2 cenários × coop-a/coop-b) rodados
+pelo agente, **ainda sem confirmação do Juan**. **Só passa com a máquina
+acordada e o túnel do Besu ativo** (ver `docs/known-issues.md`).
 3 cenários adicionais marcados `@futuro` (deselecionados por padrão via
 `pytest.ini`).
 

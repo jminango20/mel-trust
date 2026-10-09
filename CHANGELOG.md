@@ -525,3 +525,27 @@ outbox; allowlist de `tests/conftest.py` exige o prefixo de todo teste novo
 com batchNumber sintético; o retry pode correr contra uma tx ainda em voo
 (`Known transaction` — fica `pending`, correção `in_flight` proposta, não
 implementada). Tudo em `docs/known-issues.md`.
+
+## Outbox: retry trata "Known transaction" como in_flight (coop-a e coop-b) — implementado; confirmação do Juan pendente
+
+Antes, um retry que encontrasse a tx original ainda na fila do Besu
+(`getAsset` só enxerga tx minerada) reenviava, recebia `Known transaction` e
+respondia `outcome: "failed"` com ERROR no log — ruído, a tarefa seguia
+`pending`. Agora, em `_retry_one`, quando o envio falha o retry reconsulta
+`getAsset`: asset existe => `already_onchain`/`mismatch`; não existe e o erro é
+`Known transaction` => `in_flight` (tarefa segue `pending`, log em INFO);
+qualquer outro erro => `failed` como antes. Revert real nunca vira `in_flight`.
+A lógica de "asset já existe" foi extraída para `_resolve_existing`, usada nos
+dois pontos. `anchoring.anchor_batch` deixou de logar ERROR para esse caso.
+
+Feito em BDD: 2 cenários novos em `ancoragem_outbox.feature` (RED confirmado
+antes: `outcome 'failed'` com o erro `Known transaction`). **Exceção
+documentada**: a janela "em voo" da chain real não é reproduzível (retry leva
+~2,5 s até enviar vs. bloco de 2 s), então o cenário injeta só a resposta do nó
+ao envio, via `tests/support/run_retry_injected.py` (`retry_anchoring()` real em
+processo próprio); detalhes e medições em `docs/known-issues.md`.
+
+Suíte: 30 passed, 3 deselected — 2 rodadas seguidas, executadas pelo agente
+(os 26 anteriores confirmados por Juan + 4 novos: 2 cenários × coop-a/coop-b).
+Mesma ressalva de ambiente: depende de máquina acordada e túnel do Besu ativo.
+

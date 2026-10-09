@@ -35,7 +35,9 @@ ancora o hash H1; depois o `rdf:type` do lote é trocado direto no Fuseki
 CONSTRUCT, então o hash recalculado passa a ser H2 != H1, com o asset
 on-chain intacto.
 """
+import importlib.util
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -43,6 +45,7 @@ import pytest
 import requests
 from dotenv import dotenv_values
 from pytest_bdd import given, scenarios, then, when
+from web3 import Web3
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
@@ -186,7 +189,7 @@ def context():
 @pytest.fixture(autouse=True)
 def _limpeza(context, node):
     yield
-    for key in ("batch1", "batch2", "batch3"):
+    for key in ("batch1", "batch2", "batch3", "batch4", "batch5"):
         batch = context.get(key)
         if not batch:
             continue
@@ -324,3 +327,186 @@ def continua_mismatch(node, context):
     assert result["detail"] == context["mismatch_detail"], "detalhe do mismatch mudou entre retries"
     assert run["nonce_after"] == run["nonce_before"], "tx enviada num lote com mismatch"
     assert _read_task(node, batch)["status"] == "mismatch"
+
+
+# --- Cenário 3: transação em voo (Known transaction) -----------------------
+# EXCEÇÃO DOCUMENTADA (injeção de erro): tentei reproduzir com a chain real e
+# não é determinístico. O Besu mina a cada 2s, mas o retry leva ~2,5s só para
+# chegar ao envio (Fuseki + CONSTRUCT + getAsset; medido: tx enviada +0,5s após o
+# início do bloco, retry HTTP começando em +1,0s e respondendo em +3,4s), então
+# `getAsset` já enxerga a tx minerada ("already_onchain") e a janela "em voo"
+# some. Por isso o ÚNICO ponto simulado é a resposta do nó ao envio:
+# tests/support/run_retry_injected.py roda `retry_anchoring()` real do nó, em
+# processo próprio (venv do nó), com `Eth.send_raw_transaction` respondendo
+# "Known transaction" (texto idêntico ao observado na chain real). Fuseki,
+# CONSTRUCT, hash, getAsset on-chain, estimate_gas e anchor_batch (inclusive o
+# que ele loga) são reais; o contrato da resposta é o mesmo do endpoint, mas o
+# transporte HTTP é pulado nesta passada. A passada seguinte ("minerada") é
+# real, via HTTP.
+
+_CONSTRUCT_TEMPLATE = """
+PREFIX agritrust: <https://w3id.org/agrisemantics/AGRITRUST#>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+CONSTRUCT {
+  ?producer a agritrust:DataProducer .
+  ?producer foaf:name ?producerName .
+  ?producer agritrust:hasDID ?producerDID .
+  ?lote a ?productType .
+  ?lote agritrust:ownedBy ?producer .
+  ?lote agritrust:batchNumber ?batchNumber .
+}
+WHERE {
+  ?lote agritrust:batchNumber "%(b)s" ;
+        a ?productType ;
+        agritrust:ownedBy ?producer .
+  BIND("%(b)s" AS ?batchNumber)
+  ?producer a agritrust:DataProducer ;
+            agritrust:hasDID ?producerDID .
+  OPTIONAL { ?producer foaf:name ?producerName }
+}
+"""  # igual a `_LOTE_CONSTRUCT_TEMPLATE` de <nó>/lote_endpoint.py
+
+_anchoring_modules: dict = {}
+
+
+def _node_anchoring(node: dict):
+    """Carrega `<nó>/anchoring.py` por caminho (coop-a e coop-b têm módulos
+    com o mesmo nome, então cada um recebe um nome único)."""
+    name = node["name"]
+    if name not in _anchoring_modules:
+        spec = importlib.util.spec_from_file_location(
+            f"_anchoring_{name.replace('-', '_')}", REPO_ROOT / name / "anchoring.py"
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _anchoring_modules[name] = mod
+    return _anchoring_modules[name]
+
+
+def _rpc(method: str, params: list):
+    r = requests.post(RPC_URL, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params}, timeout=10)
+    r.raise_for_status()
+    return r.json()["result"]
+
+
+def _besu_address(node: dict) -> str:
+    from eth_account import Account
+    return Account.from_key(node["key_path"].read_text().strip()).address
+
+
+def _plant_lote(node: dict, batch: str, product_type: str):
+    rows = _select(node, f"""{_PREFIX}
+    SELECT ?p WHERE {{ ?p agritrust:hasDID "{PRODUCER_DID}" }} LIMIT 1""")
+    if rows:
+        producer, producer_triples = rows[0]["p"]["value"], ""
+    else:
+        producer = f"{BEE_NS}Produtor_outbox_{uuid.uuid4().hex[:8]}"
+        producer_triples = (
+            f'<{producer}> a agritrust:DataProducer ; foaf:name "{PRODUCER_NAME}" ; '
+            f'agritrust:hasDID "{PRODUCER_DID}" .'
+        )
+    _update(node, f"""{_PREFIX}
+    INSERT DATA {{
+      {producer_triples}
+      <{BEE_NS}Lote_{_slug(batch)}> a :{product_type} ;
+          agritrust:ownedBy <{producer}> ;
+          agritrust:batchNumber "{batch}" .
+    }}""")
+    _plant_pending_task(node, batch)
+
+
+def _lote_data_hash(node: dict, batch: str) -> bytes:
+    r = requests.post(
+        f"{node['fuseki']}/sparql", data={"query": _CONSTRUCT_TEMPLATE % {"b": batch}},
+        headers={"Accept": "application/n-triples"}, auth=("admin", node["password"]), timeout=20,
+    )
+    r.raise_for_status()
+    lines = sorted(line for line in r.text.split("\n") if line.strip())
+    return Web3.keccak(text="\n".join(lines) + "\n")
+
+
+import json
+import subprocess
+
+_INJECT_SCRIPT = REPO_ROOT / "tests" / "support" / "run_retry_injected.py"
+
+
+def _run_retry_injected(node: dict, context):
+    """Roda o retry real do nó com o envio respondendo 'Known transaction'."""
+    py = REPO_ROOT / node["name"] / ".venv" / "Scripts" / "python.exe"
+    proc = subprocess.run(
+        [str(py), str(_INJECT_SCRIPT)], cwd=REPO_ROOT / node["name"],
+        capture_output=True, text=True, timeout=180,
+    )
+    lines = [ln for ln in proc.stdout.splitlines() if ln.startswith("RESULT_JSON:")]
+    assert lines, f"helper de injeção não devolveu resultado (rc={proc.returncode}):\n{proc.stderr[-1500:]}"
+    payload = json.loads(lines[-1][len("RESULT_JSON:"):])
+    context.setdefault("runs", []).append(
+        {"body": payload["retry"], "logs": payload["logs"], "nonce_before": _besu_nonce(node), "nonce_after": _besu_nonce(node)}
+    )
+
+
+@given("uma tarefa pending cuja transação está em voo (o envio responde Known transaction)")
+def tarefa_pending_tx_em_voo(node, context):
+    batch = f"MS-2026-OUTBOX4-{uuid.uuid4().hex[:8]}"
+    context["batch4"] = batch
+    _plant_lote(node, batch, "HoneyApis")  # lote + tarefa pending; NADA enviado on-chain ainda
+
+
+@when("o retry de ancoragem roda com o envio respondendo Known transaction")
+def retry_com_known_transaction(node, context):
+    _run_retry_injected(node, context)
+
+
+@then("a resposta é outcome in_flight, nenhum ERROR é logado e a tarefa continua pending")
+def resposta_in_flight(node, context):
+    batch = context["batch4"]
+    run = context["runs"][-1]
+    result = _result_for(run, batch)
+    assert result["outcome"] == "in_flight", (
+        f"esperado outcome 'in_flight' (Known transaction = tx em voo), veio {result!r}"
+    )
+    errors = [log for log in run["logs"] if log["level"] == "ERROR"]
+    assert not errors, f"ERROR logado para um caso em voo: {errors!r}"
+    assert _read_task(node, batch)["status"] == "pending", "a tarefa em voo deve continuar 'pending'"
+
+
+@when("a transação em voo é minerada e o retry roda novamente")
+def minerada_e_retry(node, context):
+    batch = context["batch4"]
+    mod = _node_anchoring(node)
+    # a "tx em voo" finalmente é minerada: envia a ancoragem de verdade e espera o recibo
+    ok, tx_hash, err = mod.anchor_batch(batch, "HoneyApis", _lote_data_hash(node, batch))
+    assert ok, f"não consegui ancorar de verdade o lote para simular a mineração: {err}"
+    _run_retry(node, context)
+
+
+@then('a tarefa vira "anchored" sem reenviar nada')
+def tarefa_anchored_sem_reenvio(node, context):
+    batch = context["batch4"]
+    run = context["runs"][-1]
+    result = _result_for(run, batch)
+    assert result["outcome"] == "already_onchain", f"esperado 'already_onchain', veio {result!r}"
+    assert run["nonce_after"] == run["nonce_before"], "tx reenviada para um lote já minerado"
+    assert _read_task(node, batch)["status"] == "anchored"
+
+
+# --- Cenário 4: revert real nunca é in_flight -------------------------------
+
+@given("uma tarefa pending de um lote cujo tipo não tem processo registrado on-chain (a ancoragem reverte)")
+def tarefa_pending_revert_real(node, context):
+    batch = f"MS-2026-OUTBOX5-{uuid.uuid4().hex[:8]}"
+    context["batch5"] = batch
+    _plant_lote(node, batch, "HoneyTipoSemProcesso")
+
+
+@then('o resultado é "failed" com o erro do contrato, nunca "in_flight", e a tarefa continua pending')
+def revert_real_failed(node, context):
+    batch = context["batch5"]
+    run = context["runs"][-1]
+    result = _result_for(run, batch)
+    assert result["outcome"] == "failed", f"revert real deve ser 'failed', veio {result!r}"
+    assert "ContractCustomError" in result.get("error", ""), f"esperava o erro do contrato, veio {result!r}"
+    assert "Known transaction" not in result.get("error", "") and "RPC/túnel" not in result.get("error", "")
+    assert run["nonce_after"] == run["nonce_before"], "tx enviada num revert"
+    assert _read_task(node, batch)["status"] == "pending"

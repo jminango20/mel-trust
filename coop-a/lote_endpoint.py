@@ -66,7 +66,7 @@ from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import FOAF, RDF, XSD
 from web3 import Web3
 
-from anchoring import anchor_batch, get_onchain_data_hash
+from anchoring import anchor_batch, get_onchain_data_hash, is_known_transaction_error
 from config import CERTIFIER_URL, FUSEKI_ADMIN_PASSWORD, FUSEKI_ADMIN_USER, FUSEKI_URL
 from hash_utils import deterministic_nt_hash
 from keys import get_issuer_key
@@ -320,6 +320,21 @@ def _nature_id_from_graph(graph: Graph) -> str:
     return ""
 
 
+def _resolve_existing(batch_number: str, data_hash: bytes, onchain_hash: bytes | None, result: dict) -> dict:
+    """O asset JÁ existe on-chain: compara o hash e resolve sem enviar nada.
+    Bate => `anchored` (already_onchain). Não bate => `mismatch` (nunca anchored)."""
+    if onchain_hash is not None and onchain_hash == bytes(data_hash):
+        write_anchoring_task(batch_number, "anchored")
+        return {**result, "outcome": "already_onchain"}
+    detail = (
+        f"hash on-chain 0x{onchain_hash.hex() if onchain_hash else ''} "
+        f"!= hash recalculado 0x{bytes(data_hash).hex()}"
+    )
+    write_anchoring_task(batch_number, "mismatch", detail=detail)
+    logger.error("Retry de ancoragem: MISMATCH no lote %r: %s", batch_number, detail)
+    return {**result, "outcome": "mismatch", "detail": detail}
+
+
 def _retry_one(batch_number: str) -> dict:
     result = {"batchNumber": batch_number, "txHash": None}
 
@@ -332,24 +347,33 @@ def _retry_one(batch_number: str) -> dict:
     # getAsset ANTES de qualquer tx: se levantar (RPC fora), propaga — não
     # reenvia às cegas uma tx que talvez já exista.
     exists, onchain_hash = get_onchain_data_hash(batch_number)
-
     if exists:
-        if onchain_hash is not None and onchain_hash == bytes(data_hash):
-            write_anchoring_task(batch_number, "anchored")
-            return {**result, "outcome": "already_onchain"}
-        detail = (
-            f"hash on-chain 0x{onchain_hash.hex() if onchain_hash else ''} "
-            f"!= hash recalculado 0x{bytes(data_hash).hex()}"
-        )
-        write_anchoring_task(batch_number, "mismatch", detail=detail)
-        logger.error("Retry de ancoragem: MISMATCH no lote %r: %s", batch_number, detail)
-        return {**result, "outcome": "mismatch", "detail": detail}
+        return _resolve_existing(batch_number, data_hash, onchain_hash, result)
 
     success, tx_hash, error = anchor_batch(batch_number, _nature_id_from_graph(graph), data_hash)
-    if not success:
-        return {**result, "outcome": "failed", "error": error}
-    write_anchoring_task(batch_number, "anchored", tx_hash)
-    return {**result, "outcome": "sent", "txHash": tx_hash}
+    if success:
+        write_anchoring_task(batch_number, "anchored", tx_hash)
+        return {**result, "outcome": "sent", "txHash": tx_hash}
+
+    # O envio falhou. `getAsset` só enxerga tx JÁ MINERADA, então ele pode ter
+    # dito "não existe" enquanto a tx original ainda estava na fila (ou foi
+    # minerada logo depois). Reconsulta ANTES de classificar o erro:
+    #  - asset existe agora      => resolve (already_onchain / mismatch);
+    #  - não existe e o erro é "Known transaction" (mesma tx já na fila do
+    #    nó) => `in_flight`: não é falha, a tarefa fica `pending` e a próxima
+    #    passada conclui; sem ERROR no log;
+    #  - qualquer outro erro (revert do contrato, RPC fora...) => `failed`.
+    # Um revert real nunca vira in_flight: só "Known transaction" o faz.
+    try:
+        exists, onchain_hash = get_onchain_data_hash(batch_number)
+    except Exception as exc:  # noqa: BLE001 - sem como decidir; mantém o erro original
+        return {**result, "outcome": "failed", "error": f"{error} (reconsulta getAsset falhou: {exc})"}
+    if exists:
+        return _resolve_existing(batch_number, data_hash, onchain_hash, result)
+    if is_known_transaction_error(error):
+        return {**result, "outcome": "in_flight",
+                "detail": "transação já está na fila do nó (Known transaction); conferida na próxima passada"}
+    return {**result, "outcome": "failed", "error": error}
 
 
 @router.post("/anchoring/retry")

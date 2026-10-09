@@ -46,6 +46,15 @@ logger = logging.getLogger(__name__)
 RPC_TX_TIMEOUT_S = 60
 
 
+KNOWN_TRANSACTION_MARKER = "Known transaction"
+
+
+def is_known_transaction_error(error: str | None) -> bool:
+    """O Besu responde 'Known transaction' (-32000) quando a MESMA tx assinada
+    já está na fila dele, ainda não minerada: ela está "em voo", não falhou."""
+    return bool(error) and KNOWN_TRANSACTION_MARKER in error
+
+
 def _describe_rpc_error(exc: Exception) -> str:
     """Mensagem de erro de ancoragem. Timeout/conexão recusada no RPC viram
     uma frase explícita ("RPC/túnel não respondeu"), em vez de só o nome
@@ -239,7 +248,12 @@ def anchor_batch(batch_number: str, nature_id: str, data_hash: bytes) -> tuple[b
 
     except Exception as exc:  # noqa: BLE001 - nunca deixa exceção escapar (rede/revert/timeout/gas)
         error_msg = _describe_rpc_error(exc)
-        logger.error("Erro ao ancorar lote %r on-chain: %s", batch_number, error_msg)
+        if is_known_transaction_error(error_msg):
+            # tx idêntica já na fila (em voo): não é erro; o retry decide (ver
+            # `_retry_one` em lote_endpoint.py). INFO, não ERROR.
+            logger.info("Lote %r: tx já está em voo no nó (%s)", batch_number, KNOWN_TRANSACTION_MARKER)
+        else:
+            logger.error("Erro ao ancorar lote %r on-chain: %s", batch_number, error_msg)
         return False, None, error_msg
 
 

@@ -21,3 +21,16 @@ Funcionalidade: Ancoragem pendente é concluída por retry (outbox), sem reenvia
 
     Quando o retry roda novamente
     Então o lote continua reportado como "mismatch", a tarefa segue "mismatch" e nada é reenviado
+
+  Cenário: Transação em voo não é falha: o retry responde in_flight e conclui na passada seguinte
+    Dado uma tarefa pending cuja transação está em voo (o envio responde Known transaction)
+    Quando o retry de ancoragem roda com o envio respondendo Known transaction
+    Então a resposta é outcome in_flight, nenhum ERROR é logado e a tarefa continua pending
+
+    Quando a transação em voo é minerada e o retry roda novamente
+    Então a tarefa vira "anchored" sem reenviar nada
+
+  Cenário: Revert real nunca é tratado como in_flight
+    Dado uma tarefa pending de um lote cujo tipo não tem processo registrado on-chain (a ancoragem reverte)
+    Quando o retry de ancoragem roda
+    Então o resultado é "failed" com o erro do contrato, nunca "in_flight", e a tarefa continua pending
