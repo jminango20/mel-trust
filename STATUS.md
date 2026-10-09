@@ -41,7 +41,16 @@ seguintes, registradas em `docs/known-issues.md`): escape SPARQL simples
 (não hardening completo); `certifier` sem 4 claims (`certificateType`,
 `certificateNumber`, `analysisActivity`, `certificateReference` — removidos
 no M5 por falta de dado real, voltam com a extensão PROV-O em M5.5);
-`pre-authorized_code` fixo por nó; `pipeline.py` como script CLI.
+`pre-authorized_code`: resolvido (código dinâmico, de uso único) para lotes
+cadastrados via `POST /lote` em coop-a/coop-b e, no certifier, para o fluxo
+`POST /lote/{batch}/pre-authorized-code`; o código fixo legado
+(`config.PRE_AUTHORIZED_CODE`) continua aceito em `/token` como bypass de
+dev/teste, documentado em `docs/known-issues.md`. `pipeline.py` foi
+removido — `POST /lote` é a única via de entrada.
+
+**Topologia**: 5 nós (coop-a, coop-b, certifier, lab, verifier-demo) e
+4 contas de nó membros do canal `"mel-trust"` (coop-a, coop-b, certifier,
+lab — o verifier-demo só lê, não tem conta).
 
 ## verifier-demo — M9.5: 3 dos 4 passos do fluxo implementados
 
@@ -89,11 +98,25 @@ Credential-JWT contra o `AssetRegistry`. Resultado:
 apresentada — confirmado manualmente ponta a ponta. Detalhes completos:
 `CHANGELOG.md`.
 
+## Outbox de ancoragem (coop-a e coop-b) — implementado, confirmação do Juan pendente
+
+`POST /lote` grava uma `AnchoringTask` (recurso separado do lote — não
+altera o hash ancorado) `pending` → ancora → `anchored`. `POST
+/anchoring/retry` (manual) consulta `getAsset` antes de reenviar: hash bate
+→ só marca `anchored`; asset ausente → envia a tx; hash diferente →
+`mismatch`, reportado a cada retry e nunca marcado `anchored`. **Lacunas
+conhecidas** (`docs/known-issues.md`): `lab` e `certifier` ainda sem outbox
+(falha fica `anchoring_failed` sem retry); allowlist de
+`tests/conftest.py` precisa de atualização a cada teste novo com
+batchNumber sintético. Detalhes: `CHANGELOG.md`.
+
 ## Suíte de testes BDD (`tests/`)
 
-22 cenários passando (`tests/features/*.feature`, `pytest tests/`), zero
-falha, suíte confirmada repetível (2 rodadas seguidas sem reiniciar nada,
-resultado idêntico). 3 cenários adicionais marcados `@futuro`
+26 testes passando (`tests/features/*.feature`, `pytest tests/`), zero
+falha, suíte repetível (2 rodadas seguidas, resultado idêntico). São os 22
+cenários anteriores (confirmados por Juan) + 4 do outbox de ancoragem
+(2 cenários × coop-a/coop-b, ver seção abaixo — rodados pelo agente, ainda
+sem confirmação do Juan). 3 cenários adicionais marcados `@futuro`
 (deselecionados por padrão via `pytest.ini`).
 
 ## Fora do escopo até agora (roadmap futuro, ver CLAUDE.md)
@@ -103,7 +126,7 @@ M5.5 (registro de produtor/rotação de chaves + PROV-O de certificação), M6
 M10-M11 não iniciados.
 
 **M8 (ancoragem blockchain): completo.** Canal `"mel-trust"` criado
-on-chain, 4 contas membros (coop-a, coop-b, certifier, lab). Schema +
+on-chain, 4 contas de nó membros (coop-a, coop-b, certifier, lab). Schema +
 processos registrados (`SchemaRegistry`/`ProcessRegistry`). Ancoragem real
 via `TransactionOrchestrator.submitTransaction` nos 3 eventos (lote via
 `POST /lote`, laudo via `POST /analise`, certificação via

@@ -23,14 +23,15 @@ import requests
 from dotenv import dotenv_values
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-# Fixos: MN-2026-015, MS-2026-042, MS-2026-042-LAB-REJEITADO. Sintéticos:
+# Fixos: MN-2026-015, MS-2026-042, MS-2026-042-LAB-REJEITADO. Sintéticos
+# (inclui MEL-SILVESTRE-*, de test_pre_authorized_code.py):
 # prefixo + sufixo aleatório (ver tests/step_defs/*.py). Ancorado com ^...$.
 # Todo teste novo que cria batchNumber sintético precisa adicionar o prefixo
 # aqui, senão a AnchoringTask órfã dele não é limpa e quebra o bloco 'nada a
 # processar' de ancoragem_outbox.feature.
 _TEST_BATCH_PATTERN = (
     r"^(MN-2026-015|MS-2026-042|MS-2026-042-LAB-REJEITADO"
-    r"|MS-2026-042-REEMISSAO-.+"
+    r"|MS-2026-042-REEMISSAO-.+|MEL-SILVESTRE-.+"
     r"|MN-2026-(MELIP|MELIP-SEMLIC|REUSE1|REUSE2)-.+"
     r"|MS-2026-(ANCCERT|ANCLAUDO|ANCORA|APRESVP|HOLDERVC|VALIDAVP|VERIFYOC|OUTBOX[123])-.+)$"
 )

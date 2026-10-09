@@ -356,7 +356,7 @@ Schema (`honey-validation-shapes`, `SchemaRegistry`) e processos
 `HoneyNativeStinglessBee`) registrados no `ProcessRegistry`, canal
 `"mel-trust"`. `lab` ganhou conta Besu própria
 (`lab/keys/lab-besu.key`) e foi adicionado como membro do canal
-(`addChannelMembers`, assinado pela conta admin) — 4 nós membros agora
+(`addChannelMembers`, assinado pela conta admin) — 4 contas de nó membros agora
 (coop-a, coop-b, certifier, lab).
 
 **Ancoragem real via `TransactionOrchestrator.submitTransaction`** (ABI
@@ -462,3 +462,52 @@ confirmado manualmente via chamada direta aos 5 passos do fluxo.
 
 22 cenários BDD passando, suíte confirmada repetível (2 rodadas seguidas,
 resultado idêntico, sem reiniciar nada entre elas).
+
+## Outbox de ancoragem (coop-a e coop-b) — retry sem reenvio — implementado; confirmação do Juan pendente
+
+Falha de ancoragem em `POST /lote` (`anchoring_failed`) deixava o lote no
+Fuseki sem nenhum caminho de recuperação. Agora há uma marca de ancoragem
+por lote e um retry manual que não reenvia transação já feita.
+
+- **`AnchoringTask` em recurso SEPARADO** (`:AnchoringTask_<slug(batchNumber)>`,
+  status `pending` | `anchored` | `mismatch`, `:anchoringTxHash` quando
+  houver), nunca no recurso do lote. O hash ancorado é o keccak do grafo de
+  `_LOTE_CONSTRUCT_TEMPLATE`, que seleciona triplas por padrão fixo; a
+  tarefa fica fora desse padrão, então gravar/atualizar status NÃO altera o
+  hash e `GET /verify` (`verificacao_hash_onchain.feature`) segue GREEN. A
+  tarefa liga ao lote por `:anchoringBatch`, não por `agritrust:batchNumber`
+  — `find_existing_lote` casa qualquer recurso com esse predicado e trataria
+  a tarefa como lote duplicado.
+- **Ordem em `POST /lote`**: grava `pending` → ancora → grava `anchored`.
+  Se o processo cair entre a tx e a atualização, o retry cobre. O contrato
+  da resposta (`anchored` / `anchoring_failed`) não mudou.
+- **`POST /anchoring/retry`** (manual, sem scheduler na PoC): para cada
+  tarefa `pending` recalcula o hash do lote (mesmo CONSTRUCT +
+  `deterministic_nt_hash` de hoje) e consulta `AssetRegistry.getAsset()`
+  (`anchoring.get_onchain_data_hash`) ANTES de enviar qualquer coisa:
+  asset existe e hash bate → marca `anchored` sem reenviar
+  (`already_onchain`); não existe → envia a tx e registra o `txHash`
+  (`sent`); falha de consulta ao RPC propaga como erro daquela tarefa
+  (nunca reenvia às cegas); lote sumido do Fuseki → `lote_not_found`.
+- **`mismatch`**: asset on-chain com hash DIFERENTE do recalculado nunca
+  vira `anchored` — a tarefa é marcada `mismatch` com os dois hashes no
+  `detail` e o erro é logado. É REEXAMINADO a cada retry (re-reportado, sem
+  reenviar nada); só vira `anchored` se o dado for corrigido e o hash
+  passar a bater.
+- **Cobertura**: `tests/features/ancoragem_outbox.feature` (3 blocos:
+  pendente ainda não on-chain, já ancorado com recibo perdido, segundo
+  retry sem nada a fazer; + cenário de mismatch), com os step defs
+  parametrizados por nó (`[coop-a]`/`[coop-b]`). "Nada reenviado" é
+  verificado pelo nonce da conta Besu do nó, não pela resposta do endpoint.
+  O mismatch é plantado sem adulterar código de produção: `POST /lote` real
+  ancora H1 e o `rdf:type` do lote é trocado direto no Fuseki (H2 ≠ H1).
+- **`tests/conftest.py`**: limpa `AnchoringTask` órfãs (sem lote) antes e
+  depois de cada teste, restrito a uma allowlist dos batchNumbers dos
+  testes. Necessário porque testes com batchNumber fixo (ex.: `MN-2026-015`)
+  apagam o lote mas o asset on-chain persiste; na rodada seguinte a
+  ancoragem reverte e a tarefa fica `pending` sem lote.
+
+Suíte: 26 passed, 3 deselected (`@futuro`) — os 22 anteriores + 4 do outbox
+(2 cenários × coop-a/coop-b), rodada 2× seguidas sem diferença, executada
+pelo agente. **Fora do escopo**: `lab` e `certifier` ainda sem outbox (ver
+`docs/known-issues.md`). Confirmação manual do Juan ainda pendente.
