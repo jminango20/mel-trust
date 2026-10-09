@@ -221,3 +221,94 @@ def anchor_batch(batch_number: str, nature_id: str, data_hash: bytes) -> tuple[b
         error_msg = f"{type(exc).__name__}: {exc}"
         logger.error("Erro ao ancorar lote %r on-chain: %s", batch_number, error_msg)
         return False, None, error_msg
+
+
+# --- Leitura on-chain (outbox/retry) -------------------------------------
+# Mesmo caminho de leitura de verifier-demo/onchain_verification.py:
+# AssetRegistry resolvido AO VIVO via AddressDiscovery (nunca hardcoded);
+# `getAsset(channel, assetId)` é `view` (sem conta, sem gas, sem tx).
+ADDRESS_DISCOVERY_ADDRESS = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e"
+
+_ADDRESS_DISCOVERY_ABI = [
+    {
+        "inputs": [{"internalType": "bytes32", "name": "nameHash", "type": "bytes32"}],
+        "name": "getContractAddress",
+        "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function",
+    }
+]
+
+# Struct Asset (16 campos) — ordem/tipos iguais a onchain_verification.py
+# (CONFIRMADOS em docs/referencia-contratos/README.md seção 6).
+_ASSET_TUPLE_COMPONENTS = [
+    {"internalType": "bytes32", "name": "assetId", "type": "bytes32"},
+    {"internalType": "string", "name": "channelName", "type": "string"},
+    {"internalType": "address", "name": "owner", "type": "address"},
+    {"internalType": "bytes32", "name": "parentAssetId", "type": "bytes32"},
+    {"internalType": "uint256", "name": "amount", "type": "uint256"},
+    {"internalType": "uint256", "name": "unknown1", "type": "uint256"},
+    {"internalType": "string", "name": "idLocal", "type": "string"},
+    {"internalType": "bytes32[]", "name": "dataHashes", "type": "bytes32[]"},
+    {"internalType": "uint256", "name": "unknown2", "type": "uint256"},
+    {"internalType": "uint256", "name": "unknown3", "type": "uint256"},
+    {"internalType": "uint256[]", "name": "unknown4", "type": "uint256[]"},
+    {"internalType": "uint256", "name": "unknown5", "type": "uint256"},
+    {"internalType": "uint256", "name": "unknown6", "type": "uint256"},
+    {"internalType": "uint256[]", "name": "unknown7", "type": "uint256[]"},
+    {"internalType": "uint256", "name": "createdAt", "type": "uint256"},
+    {"internalType": "uint256", "name": "updatedAt", "type": "uint256"},
+]
+
+_GET_ASSET_ABI = [
+    {
+        "inputs": [
+            {"internalType": "string", "name": "channelName", "type": "string"},
+            {"internalType": "bytes32", "name": "assetId", "type": "bytes32"},
+        ],
+        "name": "getAsset",
+        "outputs": [
+            {"internalType": "struct Asset", "name": "asset", "type": "tuple", "components": _ASSET_TUPLE_COMPONENTS},
+            {"internalType": "bool", "name": "exists", "type": "bool"},
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    }
+]
+
+_cached_asset_registry = None
+
+
+def get_onchain_data_hash(batch_number: str) -> tuple[bool, bytes | None]:
+    """Lê `AssetRegistry.getAsset(CHANNEL_NAME, keccak256(batch_number))`.
+
+    Retorna `(exists, dataHashes[0] | None)`. `exists=True` com hash `None`
+    significa asset sem dataHashes (tratado como divergência pelo chamador).
+
+    DIFERENTE de `anchor_batch`, esta função LEVANTA exceção em erro de
+    rede/RPC: o retry precisa distinguir "asset não existe" (False, None —
+    seguro reenviar) de "não consegui consultar" (NÃO pode reenviar às
+    cegas, senão duplica a transação que talvez já exista)."""
+    global _cached_asset_registry
+
+    if _cached_asset_registry is None:
+        w3 = Web3(Web3.HTTPProvider(RPC_URL, request_kwargs={"timeout": 10}))
+        if not w3.is_connected():
+            raise ConnectionError("Não foi possível conectar ao RPC do Besu (tunel SSH pode estar fora).")
+        if w3.eth.chain_id != EXPECTED_CHAIN_ID:
+            raise ValueError(f"chain_id inesperado: {w3.eth.chain_id} (esperado {EXPECTED_CHAIN_ID}).")
+        discovery = w3.eth.contract(
+            address=Web3.to_checksum_address(ADDRESS_DISCOVERY_ADDRESS), abi=_ADDRESS_DISCOVERY_ABI
+        )
+        registry_address = discovery.functions.getContractAddress(Web3.keccak(text="ASSET_REGISTRY")).call()
+        _cached_asset_registry = w3.eth.contract(
+            address=Web3.to_checksum_address(registry_address), abi=_GET_ASSET_ABI
+        )
+
+    asset, exists = _cached_asset_registry.functions.getAsset(
+        CHANNEL_NAME, Web3.keccak(text=batch_number)
+    ).call()
+    if not exists:
+        return False, None
+    data_hashes = asset[7]
+    return True, (bytes(data_hashes[0]) if data_hashes else None)

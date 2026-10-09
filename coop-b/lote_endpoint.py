@@ -61,7 +61,7 @@ from fastapi.responses import JSONResponse
 from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import FOAF, RDF, XSD
 
-from anchoring import anchor_batch
+from anchoring import anchor_batch, get_onchain_data_hash
 from config import FUSEKI_ADMIN_PASSWORD, FUSEKI_ADMIN_USER, FUSEKI_URL
 from hash_utils import deterministic_nt_hash
 from pre_auth_codes import generate_for_batch, reissue_for_batch
@@ -225,6 +225,149 @@ def find_existing_producer(producer_did: str) -> str | None:
     if not bindings:
         return None
     return bindings[0]["producer"]["value"]
+
+
+# --- OUTBOX DE ANCORAGEM -------------------------------------------------
+# DECISÕES DE DESIGN (ver tests/features/ancoragem_outbox.feature):
+# 1. A marca de ancoragem (status + txHash) vive num RECURSO SEPARADO,
+#    `:AnchoringTask_<slug(batchNumber)>`, NUNCA no recurso do lote. O hash
+#    ancorado é keccak do grafo de `_LOTE_CONSTRUCT_TEMPLATE`, que seleciona
+#    triplas do lote por padrão fixo; a tarefa fica fora de qualquer padrão
+#    desse CONSTRUCT, então gravar/atualizar status NÃO muda o hash e não
+#    quebra GET /verify (verificacao_hash_onchain.feature).
+#    A tarefa liga ao lote por `:anchoringBatch`, NÃO por
+#    `agritrust:batchNumber`: `find_existing_lote` casa qualquer recurso com
+#    esse predicado e trataria a tarefa como lote duplicado.
+# 2. Retry é manual (POST /anchoring/retry); sem scheduler na PoC.
+# 3. Ordem em POST /lote: grava `pending` -> ancora -> grava `anchored`.
+#    Se o processo cair entre a tx e a atualização, a tarefa fica `pending`
+#    com o asset já on-chain; o retry resolve via getAsset (sem reenviar).
+# Estados: pending | anchored | mismatch (asset on-chain com hash DIFERENTE
+# do recalculado — nunca vira anchored; exige investigação humana).
+_TASK_PREFIXES = f"""PREFIX : <{BEE}>\n"""
+
+
+def _task_uri(batch_number: str) -> URIRef:
+    return BEE[f"AnchoringTask_{_slug(batch_number)}"]
+
+
+def _fuseki_update(update: str) -> None:
+    response = requests.post(
+        f"{FUSEKI_URL}/update",
+        data={"update": update},
+        auth=(FUSEKI_ADMIN_USER, FUSEKI_ADMIN_PASSWORD),
+        timeout=20,
+    )
+    response.raise_for_status()
+
+
+def write_anchoring_task(
+    batch_number: str, status: str, tx_hash: str | None = None, detail: str | None = None
+) -> None:
+    """Substitui (DELETE + INSERT numa única update) a marca de ancoragem do
+    lote. `detail` guarda o motivo em `mismatch`."""
+    task = _task_uri(batch_number)
+    extra = ""
+    if tx_hash:
+        extra += f" ;\n        :anchoringTxHash {_sparql_literal(tx_hash)}"
+    if detail:
+        extra += f" ;\n        :anchoringDetail {_sparql_literal(detail)}"
+    _fuseki_update(f"""{_TASK_PREFIXES}
+    DELETE WHERE {{ <{task}> ?p ?o }} ;
+    INSERT DATA {{
+      <{task}> a :AnchoringTask ;
+        :anchoringBatch {_sparql_literal(batch_number)} ;
+        :anchoringStatus {_sparql_literal(status)}{extra} .
+    }}""")
+
+
+def _safe_write_task(batch_number: str, status: str, tx_hash: str | None = None) -> None:
+    """Escrita de marca em POST /lote: lote já está no Fuseki, então falha
+    aqui só é logada (não quebra a resposta HTTP)."""
+    try:
+        write_anchoring_task(batch_number, status, tx_hash)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("POST /lote: falha ao gravar AnchoringTask %s do lote %r: %s", status, batch_number, exc)
+
+
+def _pending_batches() -> list[str]:
+    """Lotes a processar no retry: `pending` E `mismatch`. `mismatch` é
+    REEXAMINADO a cada retry (nunca enviado, só reportado de novo) — um
+    mismatch não pode sumir do relatório depois da primeira vez; se o dado
+    for corrigido e o hash passar a bater, vira `anchored`."""
+    response = requests.post(
+        f"{FUSEKI_URL}/sparql",
+        data={"query": f"""{_TASK_PREFIXES}
+        SELECT ?b WHERE {{ ?t :anchoringStatus ?s ; :anchoringBatch ?b .
+        FILTER(?s IN ("pending", "mismatch")) }} ORDER BY ?b"""},
+        headers={"Accept": "application/sparql-results+json"},
+        auth=(FUSEKI_ADMIN_USER, FUSEKI_ADMIN_PASSWORD),
+        timeout=20,
+    )
+    response.raise_for_status()
+    return [b["b"]["value"] for b in response.json()["results"]["bindings"]]
+
+
+def _nature_id_from_graph(graph: Graph) -> str:
+    """productType (local name) do lote = rdf:type que não é DataProducer."""
+    for _, _, cls in graph.triples((None, RDF.type, None)):
+        if cls != AGRITRUST.DataProducer:
+            return str(cls).rsplit("#", 1)[-1]
+    return ""
+
+
+def _retry_one(batch_number: str) -> dict:
+    result = {"batchNumber": batch_number, "txHash": None}
+
+    graph = _construct_lote_graph_for_hash(batch_number)
+    if len(graph) == 0:
+        # Lote sumiu do Fuseki: nada a ancorar. Continua pending (visível).
+        return {**result, "outcome": "lote_not_found"}
+    data_hash = deterministic_nt_hash(graph)
+
+    # getAsset ANTES de qualquer tx: se levantar (RPC fora), propaga — não
+    # reenvia às cegas uma tx que talvez já exista.
+    exists, onchain_hash = get_onchain_data_hash(batch_number)
+
+    if exists:
+        if onchain_hash is not None and onchain_hash == bytes(data_hash):
+            write_anchoring_task(batch_number, "anchored")
+            return {**result, "outcome": "already_onchain"}
+        detail = (
+            f"hash on-chain 0x{onchain_hash.hex() if onchain_hash else ''} "
+            f"!= hash recalculado 0x{bytes(data_hash).hex()}"
+        )
+        write_anchoring_task(batch_number, "mismatch", detail=detail)
+        logger.error("Retry de ancoragem: MISMATCH no lote %r: %s", batch_number, detail)
+        return {**result, "outcome": "mismatch", "detail": detail}
+
+    success, tx_hash, error = anchor_batch(batch_number, _nature_id_from_graph(graph), data_hash)
+    if not success:
+        return {**result, "outcome": "failed", "error": error}
+    write_anchoring_task(batch_number, "anchored", tx_hash)
+    return {**result, "outcome": "sent", "txHash": tx_hash}
+
+
+@router.post("/anchoring/retry")
+def retry_anchoring():
+    """Processa todas as tarefas `pending` (e reexamina as `mismatch`). Sync (def) de propósito: faz I/O
+    bloqueante (requests/web3) e o FastAPI roda em threadpool."""
+    try:
+        batches = _pending_batches()
+    except Exception as exc:  # noqa: BLE001
+        return _error(502, "server_error", f"Erro ao consultar o Fuseki: {exc}")
+
+    results = []
+    for batch_number in batches:
+        try:
+            results.append(_retry_one(batch_number))
+        except Exception as exc:  # noqa: BLE001 - uma tarefa com erro não interrompe as outras
+            logger.error("Retry de ancoragem: erro no lote %r: %s", batch_number, exc)
+            results.append(
+                {"batchNumber": batch_number, "txHash": None, "outcome": "error",
+                 "error": f"{type(exc).__name__}: {exc}"}
+            )
+    return {"processed": len(results), "results": results}
 
 
 @router.post("/lote")
@@ -436,6 +579,8 @@ async def cadastrar_lote(request: Request):
     tx_hash = None
     anchoring_error = None
     if batch_number is not None:
+        # Outbox: grava `pending` ANTES de ancorar (ver bloco OUTBOX acima).
+        _safe_write_task(batch_number, "pending")
         try:
             hash_graph = _construct_lote_graph_for_hash(batch_number)
             data_hash = deterministic_nt_hash(hash_graph)
@@ -454,6 +599,7 @@ async def cadastrar_lote(request: Request):
             success, tx_hash, anchoring_error = anchor_batch(batch_number, nature_id, data_hash)
             if success:
                 anchoring_status = "anchored"
+                _safe_write_task(batch_number, "anchored", tx_hash)
                 logger.info("POST /lote: lote %r ancorado on-chain, txHash=%s", batch_number, tx_hash)
             else:
                 anchoring_status = "anchoring_failed"
