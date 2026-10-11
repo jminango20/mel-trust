@@ -48,7 +48,6 @@ import requests
 from dotenv import dotenv_values
 from pytest_bdd import given, scenarios, then, when
 from rdflib import Graph
-from web3 import Web3
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))

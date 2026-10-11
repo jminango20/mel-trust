@@ -51,13 +51,9 @@ import requests
 from rdflib import Graph
 from web3 import Web3
 
+from config import ADDRESS_DISCOVERY_ADDRESS, CHANNEL_NAME, EXPECTED_CHAIN_ID, RPC_URL
+
 logger = logging.getLogger(__name__)
-
-RPC_URL = "http://localhost:8545"
-EXPECTED_CHAIN_ID = 648
-CHANNEL_NAME = "mel-trust"
-
-ADDRESS_DISCOVERY_ADDRESS = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e"
 
 # Fusekis de ORIGEM dos dados a reconstruir via CONSTRUCT — mesma
 # perspectiva de rede de `verifier-demo/config.py` (verifier-demo roda no

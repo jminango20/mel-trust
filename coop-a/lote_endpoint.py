@@ -64,7 +64,6 @@ from fastapi.responses import JSONResponse
 from jwcrypto.jws import JWS
 from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import FOAF, RDF, XSD
-from web3 import Web3
 
 from anchoring import anchor_batch, get_onchain_data_hash, is_known_transaction_error
 from config import CERTIFIER_URL, FUSEKI_ADMIN_PASSWORD, FUSEKI_ADMIN_USER, FUSEKI_URL

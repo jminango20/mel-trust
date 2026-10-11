@@ -45,6 +45,7 @@ hardcoded (não resolvida via AddressDiscovery em runtime) e mesma
 justificativa de `coop-a/anchoring.py`: o endereço já foi confirmado uma
 vez nesta sessão e o contrato não é upgradeable neste MVP.
 """
+import importlib.util
 import logging
 import os
 
@@ -72,13 +73,36 @@ def _describe_rpc_error(exc: Exception) -> str:
         )
     return f"{type(exc).__name__}: {exc}"
 
-RPC_URL = "http://localhost:8545"
-EXPECTED_CHAIN_ID = 648
+# Rede, contratos e canal vêm do config.py DESTE nó (variáveis BESU_*, com os
+# valores confirmados como default; ver config.py). Carregado POR CAMINHO, e não
+# com `from config import ...`, porque os testes do outbox carregam este módulo
+# por caminho a partir de fora do diretório do nó, onde `import config` não
+# resolve (nem seria o config certo: coop-a e coop-b têm módulos de mesmo nome).
+def _load_node_config():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.py")
+    name = "_" + os.path.basename(os.path.dirname(path)).replace("-", "_") + "_anchoring_config"
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    # config.py chama load_dotenv(), que ESCREVE o .env do nó em os.environ. Quando
+    # este módulo é carregado por caminho dentro de OUTRO processo (os testes do
+    # outbox), isso vazaria o .env deste nó (FUSEKI_URL, senha...) e os subprocessos
+    # herdariam o do primeiro nó carregado — load_dotenv() não sobrescreve variáveis
+    # já definidas. As constantes são lidas durante o exec; depois restaura-se o ambiente.
+    saved_env = dict(os.environ)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        os.environ.clear()
+        os.environ.update(saved_env)
+    return module
 
-# Endereço já CONFIRMADO em docs/referencia-contratos/README.md, seção 5.
-TRANSACTION_ORCHESTRATOR_ADDRESS = "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1"
 
-CHANNEL_NAME = "mel-trust"
+_cfg = _load_node_config()
+RPC_URL = _cfg.RPC_URL
+EXPECTED_CHAIN_ID = _cfg.EXPECTED_CHAIN_ID
+TRANSACTION_ORCHESTRATOR_ADDRESS = _cfg.TRANSACTION_ORCHESTRATOR_ADDRESS
+ADDRESS_DISCOVERY_ADDRESS = _cfg.ADDRESS_DISCOVERY_ADDRESS
+CHANNEL_NAME = _cfg.CHANNEL_NAME
 PROCESS_ID = "honey-lab-analysis"
 STAGE_ID = "reporting"
 
@@ -293,7 +317,6 @@ def is_known_transaction_error(error: str | None) -> bool:
 # Mesmo caminho de leitura de coop-a/anchoring.py e verifier-demo/
 # onchain_verification.py: AssetRegistry resolvido AO VIVO via AddressDiscovery;
 # `getAsset(channel, assetId)` é `view` (sem conta, sem gas, sem tx).
-ADDRESS_DISCOVERY_ADDRESS = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e"
 
 _ADDRESS_DISCOVERY_ABI = [
     {

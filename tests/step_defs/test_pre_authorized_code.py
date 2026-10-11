@@ -40,7 +40,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
-from scripts.test_credential_flow import GRANT_TYPE, b64url_json, build_proof_jwt  # noqa: E402
+from scripts.test_credential_flow import GRANT_TYPE, build_proof_jwt  # noqa: E402
 
 scenarios("../features/pre_authorized_code.feature")
 

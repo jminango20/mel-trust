@@ -62,3 +62,24 @@ COOP_A_SPARQL_SERVICE_URL = os.environ.get(
 COOP_B_SPARQL_SERVICE_URL = os.environ.get(
     "COOP_B_SPARQL_SERVICE_URL", "http://host.docker.internal:3031/coop-b/sparql"
 )
+
+
+# --- Rede Semear (Besu): RPC, chainId, contratos e canal da ancoragem on-chain ---
+# Lidos por anchoring.py. Variáveis com prefixo BESU_ (mesmo prefixo do
+# BESU_KEY_PATH de anchoring.py); os DEFAULTS são os valores confirmados em
+# docs/referencia-contratos/README.md — sem a variável, nada muda.
+# `localhost` (não 127.0.0.1) no RPC é o valor histórico dos nós; ver
+# docs/known-issues.md sobre o custo do `localhost` no Windows.
+RPC_URL = os.environ.get("BESU_RPC_URL", "http://localhost:8545")
+EXPECTED_CHAIN_ID = int(os.environ.get("BESU_CHAIN_ID", "648"))
+# TransactionOrchestrator: endereço já CONFIRMADO (seção 5 do README dos contratos),
+# hardcoded por default e não resolvido via AddressDiscovery em runtime (o contrato
+# não é upgradeable neste MVP).
+TRANSACTION_ORCHESTRATOR_ADDRESS = os.environ.get(
+    "BESU_TRANSACTION_ORCHESTRATOR_ADDRESS", "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1"
+)
+# AddressDiscovery: usado para resolver o AssetRegistry AO VIVO (leituras via getAsset).
+ADDRESS_DISCOVERY_ADDRESS = os.environ.get(
+    "BESU_ADDRESS_DISCOVERY_ADDRESS", "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e"
+)
+CHANNEL_NAME = os.environ.get("BESU_CHANNEL_NAME", "mel-trust")

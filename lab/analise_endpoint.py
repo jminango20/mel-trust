@@ -42,7 +42,6 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from rdflib import Graph, Literal, Namespace
 from rdflib.namespace import RDF, XSD
-from web3 import Web3
 
 from anchoring import (
     anchor_lab_analysis,
