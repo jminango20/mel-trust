@@ -526,6 +526,10 @@ com batchNumber sintético; o retry pode correr contra uma tx ainda em voo
 (`Known transaction` — fica `pending`, correção `in_flight` proposta, não
 implementada). Tudo em `docs/known-issues.md`.
 
+Atualização (2026-10-11): o `in_flight` foi implementado (ver a entrada do
+`in_flight`) e o outbox do lab também (ver a entrada do lab). O certifier
+continua sem outbox.
+
 ## Outbox: retry trata "Known transaction" como in_flight (coop-a e coop-b) — ✅ testado e confirmado
 
 Antes, um retry que encontrasse a tx original ainda na fila do Besu
