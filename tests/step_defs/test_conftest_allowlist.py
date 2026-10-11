@@ -6,11 +6,13 @@ depois de cada teste (`_purge_orphan_tasks`) apaga AnchoringTask órfã SÓ de b
 teste. Uma tarefa órfã de batchNumber real (fora da lista) tem de sobreviver — se alguém
 afrouxar o filtro, este teste fica vermelho.
 
-O teste planta direto no Fuseki (coop-a e coop-b) duas tarefas órfãs (sem lote com o mesmo
-batchNumber): uma com `LOTE-REAL-PROTEGIDO-<uuid>` (fora) e outra com
-`MS-2026-OUTBOX1-PROTALLOW-<uuid>` (dentro, casa com OUTBOX[1-5]). Chama a MESMA função da
-fixture autouse. No fim remove SÓ a tarefa que plantou fora da lista (o `finally` também cobre
-falha no meio) e confirma que não sobrou resíduo de nenhuma das duas.
+O teste planta direto no Fuseki (coop-a e coop-b) três tarefas: duas órfãs (sem lote com o
+mesmo batchNumber) — `LOTE-REAL-PROTEGIDO-<uuid>` (fora) e `MS-2026-OUTBOX1-PROTALLOW-<uuid>`
+(dentro, casa com OUTBOX[1-5]) — e uma da allowlist cujo LOTE AINDA EXISTE
+(`MS-2026-OUTBOX1-LOTEEXISTE-<uuid>`, com um recurso `agritrust:batchNumber` igual). Isso cobre
+a cláusula `FILTER NOT EXISTS` da limpeza: a terceira tem de sobreviver. Chama a MESMA função
+da fixture autouse. No fim remove SÓ o que plantou (tarefas e o lote de teste; o `finally`
+também cobre falha no meio) e confirma que não sobrou resíduo.
 """
 import uuid
 from pathlib import Path
@@ -24,7 +26,10 @@ import conftest as suite_conftest  # tests/conftest.py (mesmo módulo que o pyte
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BEE_NS = "https://w3id.org/agrisemantics/AGRITRUST/bee-extension#"
-_PREFIX = f"PREFIX : <{BEE_NS}>\n"
+_PREFIX = (
+    f"PREFIX : <{BEE_NS}>\n"
+    "PREFIX agritrust: <https://w3id.org/agrisemantics/AGRITRUST#>\n"
+)
 
 scenarios("../features/conftest_allowlist.feature")
 
@@ -82,10 +87,13 @@ def planted(node, ctx):
     ctx["allowed_batch"] = f"MS-2026-OUTBOX1-PROTALLOW-{suffix}"
     ctx["protected_uri"] = f"{BEE_NS}AnchoringTask_{ctx['protected_batch'].replace('-', '_')}"
     ctx["allowed_uri"] = f"{BEE_NS}AnchoringTask_{ctx['allowed_batch'].replace('-', '_')}"
+    ctx["alive_batch"] = f"MS-2026-OUTBOX1-LOTEEXISTE-{suffix}"
+    ctx["alive_task_uri"] = f"{BEE_NS}AnchoringTask_{ctx['alive_batch'].replace('-', '_')}"
+    ctx["alive_lote_uri"] = f"{BEE_NS}LoteTeste_{ctx['alive_batch'].replace('-', '_')}"
     yield ctx
     # garantia de limpeza mesmo se um passo falhar: só o que ESTE teste plantou
-    _delete(node, ctx["protected_uri"])
-    _delete(node, ctx["allowed_uri"])
+    for key in ("protected_uri", "allowed_uri", "alive_task_uri", "alive_lote_uri"):
+        _delete(node, ctx[key])
 
 
 @given("uma AnchoringTask órfã com batchNumber fora da allowlist e outra órfã com batchNumber da allowlist, plantadas direto no Fuseki")
@@ -93,6 +101,15 @@ def plant_both(node, planted):
     _plant(node, planted["protected_uri"], planted["protected_batch"])
     _plant(node, planted["allowed_uri"], planted["allowed_batch"])
     assert _task_exists(node, planted["protected_uri"]) and _task_exists(node, planted["allowed_uri"])
+
+
+@given("uma AnchoringTask com batchNumber da allowlist cujo lote AINDA existe no Fuseki")
+def plant_task_with_live_lote(node, planted):
+    _update(node, f"""{_PREFIX}
+    DELETE WHERE {{ <{planted['alive_lote_uri']}> ?p ?o }} ;
+    INSERT DATA {{ <{planted['alive_lote_uri']}> agritrust:batchNumber "{planted['alive_batch']}" . }}""")
+    _plant(node, planted["alive_task_uri"], planted["alive_batch"])
+    assert _task_exists(node, planted["alive_task_uri"]) and _task_exists(node, planted["alive_lote_uri"])
 
 
 @when("a limpeza de teste roda")
@@ -111,11 +128,20 @@ def check_cleanup(node, planted):
     )
 
 
-@then("ao final só a tarefa plantada fora da lista é removida e o Fuseki não fica com resíduo")
+@then("a tarefa da allowlist cujo lote ainda existe sobrevive")
+def check_live_lote_task_survives(node, planted):
+    assert _task_exists(node, planted["alive_task_uri"]), (
+        f"A limpeza APAGOU a tarefa de um lote que AINDA existe ({planted['alive_batch']}) no "
+        f"{node['name']}: a cláusula FILTER NOT EXISTS de tests/conftest.py foi removida/enfraquecida"
+    )
+
+
+@then("ao final só o que o teste plantou é removido e o Fuseki não fica com resíduo")
 def final_cleanup(node, planted):
-    _delete(node, planted["protected_uri"])
-    assert not _task_exists(node, planted["protected_uri"])
-    assert not _task_exists(node, planted["allowed_uri"])
+    for key in ("protected_uri", "alive_task_uri", "alive_lote_uri"):
+        _delete(node, planted[key])
+    for key in ("protected_uri", "allowed_uri", "alive_task_uri", "alive_lote_uri"):
+        assert not _task_exists(node, planted[key]), f"resíduo: {key}"
     rows = requests.post(
         f"{node['fuseki']}/sparql",
         data={"query": f'{_PREFIX} ASK {{ ?t :anchoringBatch ?b . FILTER(CONTAINS(?b, "{planted["protected_batch"].rsplit("-", 1)[1]}")) }}'},
