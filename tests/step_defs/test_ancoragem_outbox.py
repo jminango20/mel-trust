@@ -466,7 +466,9 @@ def resposta_in_flight(node, context):
     assert result["outcome"] == "in_flight", (
         f"esperado outcome 'in_flight' (Known transaction = tx em voo), veio {result!r}"
     )
-    errors = [log for log in run["logs"] if log["level"] == "ERROR"]
+    # só os ERROR deste lote: o retry processa o Fuseki inteiro e loga MISMATCH
+    # (de propósito, nível ERROR) de qualquer tarefa alheia em mismatch
+    errors = [log for log in run["logs"] if log["level"] == "ERROR" and batch in log["msg"]]
     assert not errors, f"ERROR logado para um caso em voo: {errors!r}"
     assert _read_task(node, batch)["status"] == "pending", "a tarefa em voo deve continuar 'pending'"
 

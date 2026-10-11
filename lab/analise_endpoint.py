@@ -44,7 +44,12 @@ from rdflib import Graph, Literal, Namespace
 from rdflib.namespace import RDF, XSD
 from web3 import Web3
 
-from anchoring import anchor_lab_analysis
+from anchoring import (
+    anchor_lab_analysis,
+    get_onchain_data_hash,
+    is_known_transaction_error,
+    parent_exists_onchain,
+)
 from config import (
     COOP_A_SPARQL_SERVICE_URL,
     COOP_B_SPARQL_SERVICE_URL,
@@ -171,6 +176,229 @@ def _resolve_product_type(batch_number: str) -> str | None:
     return product_type_cell["value"].rsplit("#", 1)[-1]
 
 
+# --- HASH DO LAUDO: UM caminho só ------------------------------------------
+# Mesmo CONSTRUCT de verifier-demo/onchain_verification.py
+# (`_LAUDO_CONSTRUCT_TEMPLATE`), rodado contra o PRÓPRIO Fuseki do lab. É usado
+# por POST /analise (depois da inserção) E por POST /anchoring/retry: o hash
+# ancorado é, por construção, o que um verificador externo recalcula, e retry
+# e POST nunca divergem entre si.
+_LAUDO_CONSTRUCT_TEMPLATE = """
+PREFIX agritrust: <https://w3id.org/agrisemantics/AGRITRUST#>
+PREFIX bee: <https://w3id.org/agrisemantics/AGRITRUST/bee-extension#>
+PREFIX lab: <https://w3id.org/agrisemantics/AGRITRUST/lab-extension#>
+CONSTRUCT {
+  ?analise a lab:AnaliseLaboratorial .
+  ?analise agritrust:batchNumber ?batchNumber .
+  ?analise bee:hasMoistureContent ?moisture .
+  ?analise bee:hasHMFContent ?hmf .
+  ?analise bee:hasAcidity ?acidity .
+  ?analise bee:hasDiastaseActivity ?diastase .
+}
+WHERE {
+  ?analise a lab:AnaliseLaboratorial ;
+           agritrust:batchNumber %(batch_number)s ;
+           bee:hasMoistureContent ?moisture ;
+           bee:hasHMFContent ?hmf ;
+           bee:hasAcidity ?acidity ;
+           bee:hasDiastaseActivity ?diastase .
+  BIND(%(batch_number)s AS ?batchNumber)
+}
+"""
+
+
+def compute_laudo_hash(batch_number: str) -> bytes:
+    """CONSTRUCT do laudo no Fuseki do lab + `deterministic_nt_hash`. Levanta
+    `LookupError` se o laudo não está no Fuseki."""
+    query = _LAUDO_CONSTRUCT_TEMPLATE % {"batch_number": _sparql_literal(batch_number)}
+    response = requests.post(
+        f"{FUSEKI_URL}/sparql",
+        data={"query": query},
+        headers={"Accept": "application/n-triples"},
+        auth=(FUSEKI_ADMIN_USER, FUSEKI_ADMIN_PASSWORD),
+        timeout=20,
+    )
+    response.raise_for_status()
+    graph = Graph()
+    graph.parse(data=response.text, format="nt")
+    if len(graph) == 0:
+        raise LookupError(f"laudo do lote {batch_number!r} não encontrado no Fuseki do lab")
+    return deterministic_nt_hash(graph)
+
+
+# --- OUTBOX DE ANCORAGEM DO LAUDO -----------------------------------------
+# Mesmo desenho do outbox do lote (coop-a/coop-b/lote_endpoint.py); ver
+# tests/features/ancoragem_outbox_lab.feature. DECISÕES:
+# 1. A marca (status + txHash) vive num RECURSO SEPARADO no Fuseki do lab,
+#    `:AnchoringTask_<slug(batchNumber)>`, NUNCA no `:Analise_<slug>`: o hash é
+#    o do CONSTRUCT acima, que seleciona o laudo por padrão fixo; a tarefa fica
+#    fora dele, então gravar status não muda o hash nem quebra GET /verify. A
+#    tarefa liga ao laudo por `:anchoringBatch`, não por `agritrust:batchNumber`
+#    (que casaria com o padrão do laudo).
+# 2. assetId do documento = keccak256(batchNumber + "-lab-analysis"); pai =
+#    keccak256(batchNumber) (ver anchoring.py).
+# 3. Retry manual (POST /anchoring/retry); sem scheduler na PoC.
+# 4. Ordem em POST /analise: grava `pending` -> ancora -> grava `anchored`.
+# Estados: pending | anchored | mismatch (asset on-chain com hash DIFERENTE do
+# recalculado — nunca vira anchored, é reexaminado a cada retry).
+_TASK_PREFIXES = f"""PREFIX : <{BEE}>\n"""
+
+
+def _task_uri(batch_number: str):
+    return BEE[f"AnchoringTask_{_slug(batch_number)}"]
+
+
+def _fuseki_update(update: str) -> None:
+    response = requests.post(
+        f"{FUSEKI_URL}/update",
+        data={"update": update},
+        auth=(FUSEKI_ADMIN_USER, FUSEKI_ADMIN_PASSWORD),
+        timeout=20,
+    )
+    response.raise_for_status()
+
+
+def write_anchoring_task(
+    batch_number: str, status: str, tx_hash: str | None = None, detail: str | None = None
+) -> None:
+    """Substitui (DELETE + INSERT numa única update) a marca de ancoragem do
+    laudo. `detail` guarda o motivo em `mismatch`."""
+    task = _task_uri(batch_number)
+    extra = ""
+    if tx_hash:
+        extra += f" ;\n        :anchoringTxHash {_sparql_literal(tx_hash)}"
+    if detail:
+        extra += f" ;\n        :anchoringDetail {_sparql_literal(detail)}"
+    _fuseki_update(f"""{_TASK_PREFIXES}
+    DELETE WHERE {{ <{task}> ?p ?o }} ;
+    INSERT DATA {{
+      <{task}> a :AnchoringTask ;
+        :anchoringBatch {_sparql_literal(batch_number)} ;
+        :anchoringStatus {_sparql_literal(status)}{extra} .
+    }}""")
+
+
+def _safe_write_task(batch_number: str, status: str, tx_hash: str | None = None) -> None:
+    """Escrita de marca em POST /analise: o laudo já está no Fuseki, então uma
+    falha aqui só é logada (não quebra a resposta HTTP)."""
+    try:
+        write_anchoring_task(batch_number, status, tx_hash)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("POST /analise: falha ao gravar AnchoringTask %s do laudo %r: %s", status, batch_number, exc)
+
+
+def _pending_batches() -> list[str]:
+    """Laudos a processar no retry: `pending` E `mismatch`. `mismatch` é
+    REEXAMINADO a cada retry (nunca enviado, só reportado de novo) — não pode
+    sumir do relatório depois da primeira vez; se o dado for corrigido e o hash
+    passar a bater, vira `anchored`."""
+    response = requests.post(
+        f"{FUSEKI_URL}/sparql",
+        data={"query": f"""{_TASK_PREFIXES}
+        SELECT ?b WHERE {{ ?t :anchoringStatus ?s ; :anchoringBatch ?b .
+        FILTER(?s IN ("pending", "mismatch")) }} ORDER BY ?b"""},
+        headers={"Accept": "application/sparql-results+json"},
+        auth=(FUSEKI_ADMIN_USER, FUSEKI_ADMIN_PASSWORD),
+        timeout=20,
+    )
+    response.raise_for_status()
+    return [b["b"]["value"] for b in response.json()["results"]["bindings"]]
+
+
+def _resolve_existing(batch_number: str, data_hash: bytes, onchain_hash: bytes | None, result: dict) -> dict:
+    """O asset do laudo JÁ existe on-chain: compara o hash e resolve sem enviar
+    nada. Bate => `anchored` (already_onchain). Não bate => `mismatch`."""
+    if onchain_hash is not None and onchain_hash == bytes(data_hash):
+        write_anchoring_task(batch_number, "anchored")
+        return {**result, "outcome": "already_onchain"}
+    detail = (
+        f"hash on-chain 0x{onchain_hash.hex() if onchain_hash else ''} "
+        f"!= hash recalculado 0x{bytes(data_hash).hex()}"
+    )
+    write_anchoring_task(batch_number, "mismatch", detail=detail)
+    logger.error("Retry de ancoragem do laudo: MISMATCH no lote %r: %s", batch_number, detail)
+    return {**result, "outcome": "mismatch", "detail": detail}
+
+
+def _retry_one(batch_number: str) -> dict:
+    result = {"batchNumber": batch_number, "txHash": None}
+
+    try:
+        data_hash = compute_laudo_hash(batch_number)
+    except LookupError:
+        # Laudo sumiu do Fuseki: nada a ancorar. Continua pending (visível).
+        return {**result, "outcome": "laudo_not_found"}
+
+    # getAsset ANTES de qualquer tx: se levantar (RPC fora), propaga — não
+    # reenvia às cegas uma tx que talvez já exista.
+    exists, onchain_hash = get_onchain_data_hash(batch_number)
+    if exists:
+        return _resolve_existing(batch_number, data_hash, onchain_hash, result)
+
+    # O laudo é um documento FILHO: sem o asset do lote on-chain o
+    # createDocument reverte. Não envia; espera o pai (a tarefa fica pending).
+    if not parent_exists_onchain(batch_number):
+        return {**result, "outcome": "waiting_parent",
+                "detail": "asset do lote (pai) ainda não existe on-chain; nada enviado"}
+
+    # natureId = productType do lote (consulta federada coop-a/coop-b). Sem ele
+    # não há como montar a tx: failed COM O MOTIVO, tarefa segue pending.
+    try:
+        product_type = _resolve_product_type(batch_number)
+    except Exception as exc:  # noqa: BLE001
+        return {**result, "outcome": "failed",
+                "error": f"natureId indisponível: consulta federada ao coop-a/coop-b falhou "
+                         f"({type(exc).__name__}: {exc}); nada enviado"}
+    if product_type is None:
+        return {**result, "outcome": "failed",
+                "error": "natureId indisponível: productType do lote não encontrado em coop-a nem coop-b; nada enviado"}
+
+    success, tx_hash, error = anchor_lab_analysis(batch_number, product_type, data_hash)
+    if success:
+        write_anchoring_task(batch_number, "anchored", tx_hash)
+        return {**result, "outcome": "sent", "txHash": tx_hash}
+
+    # O envio falhou. `getAsset` só enxerga tx JÁ MINERADA: pode ter dito "não
+    # existe" com a tx original ainda na fila (ou minerada logo depois).
+    # Reconsulta ANTES de classificar o erro:
+    #  - asset existe agora      => resolve (already_onchain / mismatch);
+    #  - não existe e o erro é "Known transaction" => `in_flight` (tarefa
+    #    segue pending, a próxima passada conclui, sem ERROR no log);
+    #  - qualquer outro erro (revert do contrato, RPC fora...) => `failed`.
+    try:
+        exists, onchain_hash = get_onchain_data_hash(batch_number)
+    except Exception as exc:  # noqa: BLE001 - sem como decidir; mantém o erro original
+        return {**result, "outcome": "failed", "error": f"{error} (reconsulta getAsset falhou: {exc})"}
+    if exists:
+        return _resolve_existing(batch_number, data_hash, onchain_hash, result)
+    if is_known_transaction_error(error):
+        return {**result, "outcome": "in_flight",
+                "detail": "transação já está na fila do nó (Known transaction); conferida na próxima passada"}
+    return {**result, "outcome": "failed", "error": error}
+
+
+@router.post("/anchoring/retry")
+def retry_anchoring():
+    """Processa todas as tarefas `pending` (e reexamina as `mismatch`). Sync
+    (def) de propósito: faz I/O bloqueante (requests/web3) e o FastAPI roda em
+    threadpool."""
+    try:
+        batches = _pending_batches()
+    except Exception as exc:  # noqa: BLE001
+        return _error(502, "server_error", f"Erro ao consultar o Fuseki: {exc}")
+
+    results = []
+    for batch_number in batches:
+        try:
+            results.append(_retry_one(batch_number))
+        except Exception as exc:  # noqa: BLE001 - uma tarefa com erro não interrompe as outras
+            logger.error("Retry de ancoragem do laudo: erro no lote %r: %s", batch_number, exc)
+            results.append(
+                {"batchNumber": batch_number, "txHash": None, "outcome": "error",
+                 "error": f"{type(exc).__name__}: {exc}"}
+            )
+    return {"processed": len(results), "results": results}
+
+
 @router.post("/analise")
 async def registrar_analise(request: Request):
     """Registra uma análise laboratorial. Ver docstring do módulo para o
@@ -252,22 +480,25 @@ async def registrar_analise(request: Request):
     # (mesma decisão do usuário aplicada em coop-a/coop-b, ver
     # tests/features/ancoragem_laudo.feature).
     #
-    # Precisa do productType do lote (natureId do processo
-    # honey-lab-analysis) — resolvido via SPARQL federado contra
-    # coop-a/coop-b (ver _resolve_product_type acima). Se o lote não for
-    # encontrado em nenhuma das duas, a ancoragem não é tentada.
+    # OUTBOX: grava `pending` ANTES de qualquer tentativa (inclusive a de
+    # resolver o productType); depois de ancorar, `anchored`. Se o processo
+    # cair no meio, ou a ancoragem falhar, `POST /anchoring/retry` cobre.
     #
-    # `dataHashes` usa o keccak256 do MESMO objeto `g` (rdflib.Graph) em
-    # memória, serializado como N-Triples ORDENADO (ver hash_utils.py —
-    # mesmo achado/correção de coop-a/lote_endpoint.py: serialize(format="nt")
-    # não é determinístico em ordem entre processos Python, o que quebraria
-    # a reconstrução do hash por um verificador externo via CONSTRUCT) — não
-    # uma nova consulta SPARQL ao Fuseki — para que o hash ancorado
-    # corresponda exatamente ao grafo que este endpoint acabou de montar e
-    # inserir.
+    # HASH: UM caminho só — `compute_laudo_hash` (CONSTRUCT contra o Fuseki do
+    # lab + deterministic_nt_hash), o MESMO do retry. Substitui o hash do grafo
+    # `g` em memória que este endpoint ancorava antes: os dois dão o mesmo valor
+    # (o verifier-demo confirmava o laudo), mas ter dois caminhos de hash é o
+    # que deixa retry e POST divergirem sem ninguém notar.
+    #
+    # Precisa do productType do lote (natureId do processo honey-lab-analysis)
+    # — resolvido via SPARQL federado contra coop-a/coop-b (ver
+    # _resolve_product_type acima). Se o lote não for encontrado em nenhuma
+    # das duas, a ancoragem não é tentada agora (a tarefa fica pending e o
+    # retry reporta o motivo).
     anchoring_status = "anchoring_skipped"
     tx_hash = None
     anchoring_error = None
+    _safe_write_task(batch_number, "pending")
     try:
         product_type = _resolve_product_type(batch_number)
         if product_type is None:
@@ -280,12 +511,13 @@ async def registrar_analise(request: Request):
                 anchoring_error,
             )
         else:
-            data_hash = deterministic_nt_hash(g)
+            data_hash = compute_laudo_hash(batch_number)
             success, tx_hash, anchoring_error = anchor_lab_analysis(
                 batch_number, product_type, data_hash
             )
             if success:
                 anchoring_status = "anchored"
+                _safe_write_task(batch_number, "anchored", tx_hash)
                 logger.info(
                     "POST /analise: laudo do lote %r ancorado on-chain, txHash=%s",
                     batch_number, tx_hash,

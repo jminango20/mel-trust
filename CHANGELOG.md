@@ -549,3 +549,50 @@ Suíte: 30 passed, 3 deselected — 2 rodadas seguidas, executadas pelo agente
 (os 26 anteriores confirmados por Juan + 4 novos: 2 cenários × coop-a/coop-b).
 Mesma ressalva de ambiente: depende de máquina acordada e túnel do Besu ativo.
 
+## Outbox de ancoragem do laudo (lab) — implementado; confirmação do Juan pendente
+
+`lab` ganha o mesmo outbox do lote: `POST /analise` grava uma `AnchoringTask`
+em recurso SEPARADO no Fuseki do lab (`pending` → ancora → `anchored`; o hash é
+o do CONSTRUCT do laudo, que a tarefa não alcança) e `POST /anchoring/retry`
+(manual) reconcilia: asset já on-chain com hash igual → `anchored` sem reenviar
+(`already_onchain`); hash diferente → `mismatch` (nunca anchored, reexaminado a
+cada retry); não existe → envia (`sent`, txHash registrado); mesma lógica de
+`in_flight` do lote (envio responde `Known transaction`, asset não existe → a
+tarefa segue `pending`, INFO no log).
+
+Específico do laudo (documento filho, `assetId = keccak256(batchNumber +
+"-lab-analysis")`, `parentAssetId = keccak256(batchNumber)`):
+- **`waiting_parent`**: se o asset do lote ainda não existe on-chain, o retry
+  NÃO envia (a tx reverteria); a tarefa segue `pending`.
+- **natureId indisponível**: o `productType` vem de consulta federada ao
+  coop-a/coop-b; se não resolve, `failed` com "natureId indisponível: …", nada
+  enviado, tarefa `pending`.
+- **Um caminho de hash só**: `POST /analise` passou a ancorar o hash de
+  `compute_laudo_hash` (CONSTRUCT no Fuseki do lab + `deterministic_nt_hash`),
+  a MESMA função do retry, em vez do hash do grafo em memória. Retry e POST não
+  podem divergir; a checagem independente continua sendo o `GET /verify` do
+  verifier-demo (réplica própria do CONSTRUCT).
+
+Feito em BDD (`tests/features/ancoragem_outbox_lab.feature`, 5 cenários; RED
+confirmado antes: 404 em `POST /anchoring/retry`). A classificação do retry foi
+comparada com a do coop-a: a parte pós-envio é idêntica; diferem só o nome
+`laudo_not_found` (vs. `lote_not_found`), `waiting_parent` e a falha de natureId,
+que existem só no lab. `in_flight` usa a mesma exceção de teste do lote (só a
+resposta do nó ao envio é simulada).
+
+`tests/conftest.py`: a limpeza de tarefas órfãs agora cobre também o Fuseki do
+lab; allowlist com `MS-2026-LABOUT[1-6]-…` e, corrigindo uma lacuna antiga,
+`MS-2026-OUTBOX[1-5]-…` (os testes de in_flight/revert do lote usam `OUTBOX4/5`
+e a allowlist só tinha `[123]`).
+
+Suíte: 35 passed, 3 deselected — 2 rodadas seguidas, executadas pelo agente
+(os 30 anteriores + 5 do outbox do lab). Uma tentativa anterior falhou na 2ª
+rodada (2 failed) por asserções globais vendo tarefas de testes antigos de
+batchNumber fixo (MS-2026-042, MN-2026-015, MS-2026-042-LAB-REJEITADO, que
+repostam o laudo a cada rodada). Resolvido a pedido do Juan: o `conftest.py`
+limpa no Fuseki do lab todas as tarefas da allowlist (órfãs ou não), e as
+asserções "nada a processar"/"nenhum ERROR" do lab voltaram a valer para o
+Fuseki inteiro; 2 rodadas seguidas, 35 passed (ver `docs/known-issues.md`).
+Mesma ressalva de ambiente: depende de máquina acordada e túnel do Besu ativo.
+**Fora do escopo**: `certifier` ainda sem outbox.
+

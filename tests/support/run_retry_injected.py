@@ -12,10 +12,13 @@ Todo o resto é real: Fuseki, CONSTRUCT, hash, `getAsset` on-chain,
 que a latência do próprio retry antes de enviar (~2,5s medidos: Fuseki +
 CONSTRUCT + getAsset), então não dá para reproduzi-la de forma determinística.
 
-Uso:  <nó>/.venv/Scripts/python.exe tests/support/run_retry_injected.py   (cwd = <nó>)
+Uso:  <nó>/.venv/Scripts/python.exe tests/support/run_retry_injected.py [módulo]   (cwd = <nó>)
+`módulo` = onde está `retry_anchoring()`; padrão `lote_endpoint` (coop-a/coop-b);
+o lab usa `analise_endpoint`.
 Saída: uma linha  RESULT_JSON:{"retry": <resposta>, "logs": [{"level","msg"}...]}
 com todos os registros de log >= WARNING emitidos durante o retry.
 """
+import importlib
 import json
 import logging
 import sys
@@ -35,7 +38,7 @@ class _Grab(logging.Handler):
 grab = _Grab()
 logging.getLogger().addHandler(grab)
 
-import lote_endpoint as le  # noqa: E402
+le = importlib.import_module(sys.argv[1] if len(sys.argv) > 1 else "lote_endpoint")
 from web3.eth import Eth  # noqa: E402
 from web3.exceptions import Web3RPCError  # noqa: E402
 
