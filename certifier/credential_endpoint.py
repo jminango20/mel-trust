@@ -79,6 +79,7 @@ prevista pra M5.5. Ver docs/notas-arquitetura/certifier-claims-hardcoded-m4.md.
 """
 import logging
 import os
+import re
 import time
 
 import jwt as pyjwt
@@ -93,7 +94,12 @@ from sd_jwt.common import SDObj
 from sd_jwt.issuer import SDJWTIssuer
 from web3 import Web3
 
-from anchoring import anchor_certification
+from anchoring import (
+    anchor_certification,
+    get_onchain_data_hash,
+    is_known_transaction_error,
+    parent_exists_onchain,
+)
 from config import (
     COOP_A_SPARQL_SERVICE_URL,
     COOP_B_SPARQL_SERVICE_URL,
@@ -378,6 +384,213 @@ def _decode_proof_jwt(jwt_str: str) -> tuple[dict, dict]:
     return header, payload
 
 
+# --- OUTBOX DE ANCORAGEM DA VC DE CERTIFICAÇÃO ---------------------------------
+# Mesmo desenho do outbox de coop-a/coop-b/lab; ver
+# tests/features/ancoragem_outbox_certifier.feature. DECISÕES:
+# 1. O hash ancorado é o keccak256 do SD-JWT COMPLETO emitido (salts aleatórios
+#    nas disclosures): NÃO é reconstruível de nenhum dado. Por isso a
+#    `AnchoringTask` — recurso SEPARADO no Fuseki do certifier,
+#    `:AnchoringTask_<slug(batchNumber)>` — GUARDA, no momento da emissão: o
+#    hash (`:anchoringDataHash`, "0x…"), o batchNumber (`:anchoringBatch`) e o
+#    natureId/productType (`:anchoringNature`). O retry reenvia o hash GUARDADO e
+#    nunca recalcula; o natureId guardado evita depender de consulta federada.
+#    LIMITAÇÃO: tarefa perdida => hash irrecuperável (a VC já foi entregue, mas
+#    fica sem ancoragem até uma nova emissão).
+# 2. assetId do documento = keccak256(batchNumber + "-certification"); pai =
+#    keccak256(batchNumber) (ver anchoring.py).
+# 3. Um documento por lote: se já existe tarefa para o batchNumber, em QUALQUER
+#    estado, POST /credential responde 409 ANTES de assinar qualquer coisa.
+# 4. Ordem em POST /credential: (409?) -> assina o SD-JWT -> grava `pending`
+#    (com hash + natureId) -> ancora -> `anchored`. Se gravar a tarefa falhar, a
+#    VC NÃO é entregue (502): sem tarefa o hash não seria recuperável e o 409 não
+#    protegeria o lote de uma reemissão.
+# 5. Retry manual (POST /anchoring/retry); sem scheduler na PoC.
+# Estados: pending | anchored | mismatch (asset on-chain com hash DIFERENTE do
+# guardado — nunca vira anchored, é reexaminado a cada retry).
+_TASK_PREFIXES = f"""PREFIX : <{BEE}>\n"""
+
+
+def _slug(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_]", "_", value)
+
+
+def _task_uri(batch_number: str):
+    return BEE[f"AnchoringTask_{_slug(batch_number)}"]
+
+
+def _fuseki_update(update: str) -> None:
+    response = requests.post(
+        f"{FUSEKI_URL}/update",
+        data={"update": update},
+        auth=(FUSEKI_ADMIN_USER, FUSEKI_ADMIN_PASSWORD),
+        timeout=20,
+    )
+    response.raise_for_status()
+
+
+def _fuseki_select(query: str) -> list[dict]:
+    response = requests.post(
+        f"{FUSEKI_URL}/sparql",
+        data={"query": query},
+        headers={"Accept": "application/sparql-results+json"},
+        auth=(FUSEKI_ADMIN_USER, FUSEKI_ADMIN_PASSWORD),
+        timeout=20,
+    )
+    response.raise_for_status()
+    return response.json()["results"]["bindings"]
+
+
+def task_exists(batch_number: str) -> bool:
+    """Já existe AnchoringTask (em qualquer estado) para o batchNumber?"""
+    rows = _fuseki_select(f"""{_TASK_PREFIXES}
+    SELECT ?t WHERE {{ ?t :anchoringBatch {_sparql_literal(batch_number)} }} LIMIT 1""")
+    return bool(rows)
+
+
+def create_pending_task(batch_number: str, data_hash: bytes, nature_id: str) -> None:
+    """Grava a tarefa `pending` GUARDANDO hash + natureId (única chance: o hash não é recuperável depois)."""
+    task = _task_uri(batch_number)
+    _fuseki_update(f"""{_TASK_PREFIXES}
+    DELETE WHERE {{ <{task}> ?p ?o }} ;
+    INSERT DATA {{
+      <{task}> a :AnchoringTask ;
+        :anchoringBatch {_sparql_literal(batch_number)} ;
+        :anchoringStatus "pending" ;
+        :anchoringDataHash {_sparql_literal("0x" + bytes(data_hash).hex())} ;
+        :anchoringNature {_sparql_literal(nature_id)} .
+    }}""")
+
+
+def set_task_status(batch_number: str, status: str, tx_hash: str | None = None, detail: str | None = None) -> None:
+    """Troca SÓ status/txHash/detail da tarefa, preservando o hash e o natureId guardados."""
+    inserts = f":anchoringStatus {_sparql_literal(status)}"
+    if tx_hash:
+        inserts += f" ; :anchoringTxHash {_sparql_literal(tx_hash)}"
+    if detail:
+        inserts += f" ; :anchoringDetail {_sparql_literal(detail)}"
+    _fuseki_update(f"""{_TASK_PREFIXES}
+    DELETE {{ ?t :anchoringStatus ?s . ?t :anchoringTxHash ?x . ?t :anchoringDetail ?d }}
+    INSERT {{ ?t {inserts} }}
+    WHERE  {{ ?t :anchoringBatch {_sparql_literal(batch_number)} ; :anchoringStatus ?s .
+             OPTIONAL {{ ?t :anchoringTxHash ?x }} OPTIONAL {{ ?t :anchoringDetail ?d }} }}""")
+
+
+def _safe_set_task_status(batch_number: str, status: str, tx_hash: str | None = None) -> None:
+    """Em POST /credential a VC já foi entregue/ancorada: falha aqui só é logada
+    (a tarefa fica `pending` e o retry resolve via getAsset)."""
+    try:
+        set_task_status(batch_number, status, tx_hash)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("POST /credential: falha ao gravar AnchoringTask %s da VC do lote %r: %s", status, batch_number, exc)
+
+
+def read_task(batch_number: str) -> dict | None:
+    rows = _fuseki_select(f"""{_TASK_PREFIXES}
+    SELECT ?hash ?nature WHERE {{
+      ?t :anchoringBatch {_sparql_literal(batch_number)} .
+      OPTIONAL {{ ?t :anchoringDataHash ?hash }} OPTIONAL {{ ?t :anchoringNature ?nature }}
+    }} LIMIT 1""")
+    if not rows:
+        return None
+    return {"dataHash": rows[0].get("hash", {}).get("value"), "nature": rows[0].get("nature", {}).get("value")}
+
+
+def _pending_batches() -> list[str]:
+    """VCs a processar no retry: `pending` E `mismatch` (este é REEXAMINADO a cada
+    retry — nunca enviado, só reportado de novo — e só vira `anchored` se o hash
+    on-chain passar a bater com o guardado)."""
+    rows = _fuseki_select(f"""{_TASK_PREFIXES}
+    SELECT ?b WHERE {{ ?t :anchoringStatus ?s ; :anchoringBatch ?b .
+    FILTER(?s IN ("pending", "mismatch")) }} ORDER BY ?b""")
+    return [r["b"]["value"] for r in rows]
+
+
+def _resolve_existing(batch_number: str, data_hash: bytes, onchain_hash: bytes | None, result: dict) -> dict:
+    """O asset da VC JÁ existe on-chain: compara com o hash GUARDADO e resolve sem
+    enviar nada. Bate => `anchored` (already_onchain). Não bate => `mismatch`."""
+    if onchain_hash is not None and onchain_hash == bytes(data_hash):
+        set_task_status(batch_number, "anchored")
+        return {**result, "outcome": "already_onchain"}
+    detail = (
+        f"hash on-chain 0x{onchain_hash.hex() if onchain_hash else ''} "
+        f"!= hash guardado 0x{bytes(data_hash).hex()}"
+    )
+    set_task_status(batch_number, "mismatch", detail=detail)
+    logger.error("Retry de ancoragem da VC: MISMATCH no lote %r: %s", batch_number, detail)
+    return {**result, "outcome": "mismatch", "detail": detail}
+
+
+def _retry_one(batch_number: str) -> dict:
+    result = {"batchNumber": batch_number, "txHash": None}
+
+    task = read_task(batch_number)
+    stored = (task or {}).get("dataHash") or ""
+    nature_id = (task or {}).get("nature")
+    if task is None or not re.fullmatch(r"0x[0-9a-fA-F]{64}", stored) or not nature_id:
+        # Sem hash/natureId guardados não há o que reenviar — e o hash do SD-JWT não é recuperável.
+        return {**result, "outcome": "failed",
+                "error": "tarefa sem hash/natureId guardados válidos; o hash do SD-JWT não é recuperável"}
+    data_hash = bytes.fromhex(stored[2:])
+
+    # getAsset ANTES de qualquer tx: se levantar (RPC fora), propaga — não
+    # reenvia às cegas uma tx que talvez já exista.
+    exists, onchain_hash = get_onchain_data_hash(batch_number)
+    if exists:
+        return _resolve_existing(batch_number, data_hash, onchain_hash, result)
+
+    # A VC é um documento FILHO: sem o asset do lote on-chain o createDocument
+    # reverte. Não envia; espera o pai (a tarefa fica pending).
+    if not parent_exists_onchain(batch_number):
+        return {**result, "outcome": "waiting_parent",
+                "detail": "asset do lote (pai) ainda não existe on-chain; nada enviado"}
+
+    success, tx_hash, error = anchor_certification(batch_number, nature_id, data_hash)
+    if success:
+        set_task_status(batch_number, "anchored", tx_hash)
+        return {**result, "outcome": "sent", "txHash": tx_hash}
+
+    # O envio falhou. `getAsset` só enxerga tx JÁ MINERADA: pode ter dito "não
+    # existe" com a tx original ainda na fila (ou minerada logo depois).
+    # Reconsulta ANTES de classificar o erro:
+    #  - asset existe agora      => resolve (already_onchain / mismatch);
+    #  - não existe e o erro é "Known transaction" => `in_flight` (tarefa
+    #    segue pending, a próxima passada conclui, sem ERROR no log);
+    #  - qualquer outro erro (revert do contrato, RPC fora...) => `failed`.
+    try:
+        exists, onchain_hash = get_onchain_data_hash(batch_number)
+    except Exception as exc:  # noqa: BLE001 - sem como decidir; mantém o erro original
+        return {**result, "outcome": "failed", "error": f"{error} (reconsulta getAsset falhou: {exc})"}
+    if exists:
+        return _resolve_existing(batch_number, data_hash, onchain_hash, result)
+    if is_known_transaction_error(error):
+        return {**result, "outcome": "in_flight",
+                "detail": "transação já está na fila do nó (Known transaction); conferida na próxima passada"}
+    return {**result, "outcome": "failed", "error": error}
+
+
+@router.post("/anchoring/retry")
+def retry_anchoring():
+    """Processa todas as tarefas `pending` (e reexamina as `mismatch`), reenviando o
+    hash GUARDADO. Sync (def) de propósito: faz I/O bloqueante (requests/web3) e o
+    FastAPI roda em threadpool."""
+    try:
+        batches = _pending_batches()
+    except Exception as exc:  # noqa: BLE001
+        return _oauth_error(502, "server_error", f"Erro ao consultar o Fuseki: {exc}")
+
+    results = []
+    for batch_number in batches:
+        try:
+            results.append(_retry_one(batch_number))
+        except Exception as exc:  # noqa: BLE001 - uma tarefa com erro não interrompe as outras
+            logger.error("Retry de ancoragem da VC: erro no lote %r: %s", batch_number, exc)
+            results.append(
+                {"batchNumber": batch_number, "txHash": None, "outcome": "error",
+                 "error": f"{type(exc).__name__}: {exc}"}
+            )
+    return {"processed": len(results), "results": results}
+
+
 @router.post("/credential")
 async def credential_endpoint(request: Request):
     # --- 1. Autenticação via access_token (RFC 6750 Bearer Token) ---
@@ -420,6 +633,26 @@ async def credential_endpoint(request: Request):
     # consultar — não um identificador próprio do laudo (ver comentário da
     # query acima). Se ausente, cai no DEFAULT_BATCH_NUMBER.
     batch_number = body.get("batch_number") or DEFAULT_BATCH_NUMBER
+
+    # --- 2b. Um documento de certificação POR LOTE: se já existe AnchoringTask
+    # (em QUALQUER estado) para o batchNumber, 409 ANTES de assinar qualquer
+    # coisa e antes de consumir o c_nonce — nenhuma VC nova, nenhuma tarefa nova.
+    # Reemitir geraria outro SD-JWT (salts novos => hash novo) que não cabe no
+    # mesmo asset (keccak256(batch + "-certification")); atualizar exigiria
+    # updateAsset/UPDATE_ASSET (ver docs/known-issues.md). Nota: o endpoint é
+    # `async def` com I/O bloqueante, então as requisições rodam uma a uma e
+    # checar-e-depois-gravar não tem corrida dentro do processo. ---
+    try:
+        already_issued = task_exists(batch_number)
+    except requests.RequestException as exc:
+        return _oauth_error(502, "server_error", f"Falha ao consultar o Fuseki: {exc}")
+    if already_issued:
+        return _oauth_error(
+            409,
+            "credential_already_issued",
+            f"O lote {batch_number!r} já tem uma certificação emitida (um documento por lote). "
+            f"Nenhuma nova VC foi emitida.",
+        )
 
     # --- 3. Proof de posse de chave (key proof) ---
     proof = body.get("proof")
@@ -581,16 +814,35 @@ async def credential_endpoint(request: Request):
     # `dataHashes` usa o keccak256 do SD-JWT COMPLETO já serializado
     # (`sdjwt.sd_jwt_issuance`) — o mesmo artefato final entregue ao holder
     # nesta mesma resposta, não um subconjunto de claims.
+    #
+    # OUTBOX: ANTES de ancorar, grava a `AnchoringTask` `pending` GUARDANDO o
+    # hash (único momento em que ele existe: os salts das disclosures são
+    # aleatórios), o batchNumber e o natureId. Se gravar falhar, a VC NÃO é
+    # entregue (502): sem tarefa o hash seria irrecuperável e o 409 acima não
+    # protegeria o lote de uma reemissão. Depois de ancorar, `anchored`; se
+    # ancorar falhar, a tarefa fica `pending` e POST /anchoring/retry reenvia o
+    # hash guardado.
+    data_hash = Web3.keccak(text=sdjwt.sd_jwt_issuance)
+    try:
+        create_pending_task(batch_number, data_hash, nature_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("POST /credential: falha ao gravar AnchoringTask pending do lote %r: %s", batch_number, exc)
+        return _oauth_error(
+            502,
+            "server_error",
+            f"Não foi possível registrar a tarefa de ancoragem da VC (Fuseki): {exc}. Nenhuma VC foi entregue.",
+        )
+
     anchoring_status = "anchoring_skipped"
     tx_hash = None
     anchoring_error = None
     try:
-        data_hash = Web3.keccak(text=sdjwt.sd_jwt_issuance)
         success, tx_hash, anchoring_error = anchor_certification(
             batch_number, nature_id, data_hash
         )
         if success:
             anchoring_status = "anchored"
+            _safe_set_task_status(batch_number, "anchored", tx_hash)
             logger.info(
                 "POST /credential: VC de certificação do lote %r ancorada on-chain, txHash=%s",
                 batch_number, tx_hash,

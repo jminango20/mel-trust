@@ -605,3 +605,61 @@ Fuseki inteiro; 2 rodadas seguidas, 35 passed (ver `docs/known-issues.md`).
 Mesma ressalva de ambiente: depende de máquina acordada e túnel do Besu ativo.
 **Fora do escopo**: `certifier` ainda sem outbox.
 
+Atualização (2026-10-12): o `certifier` também ganhou o outbox (ver a entrada
+do certifier). Com isso os três eventos ancorados têm retry.
+
+## Outbox de ancoragem da VC de certificação (certifier) — ✅ testado e confirmado
+
+**Confirmado por Juan em 2026-10-12** (leu `41 passed` nas duas rodadas).
+
+`POST /credential` do certifier ganha o mesmo outbox do lote e do laudo, com
+duas diferenças de fundo, ambas por causa do que é ancorado: o keccak256 do
+**SD-JWT completo** emitido (`<Credential-JWT>~<disclosures>~`).
+
+- **Hash guardado na emissão.** Cada disclosure leva um salt aleatório, então
+  o hash do SD-JWT NÃO é recalculável a partir de nenhum dado. A `AnchoringTask`
+  (recurso separado no Fuseki do certifier) GUARDA, quando a VC é emitida: o
+  hash (`:anchoringDataHash`), o batchNumber e o natureId/productType
+  (`:anchoringNature`) — o natureId guardado dispensa a consulta federada no
+  retry. Ordem: assina o SD-JWT → grava `pending` (com hash + natureId) →
+  ancora (`createDocument`, `assetId = keccak256(batchNumber + "-certification")`,
+  pai `keccak256(batchNumber)`) → `anchored`. Se gravar a tarefa falhar, a VC NÃO
+  é entregue (502): sem tarefa o hash seria irrecuperável.
+- **Reenvio do hash guardado.** `POST /anchoring/retry` (manual) NUNCA
+  recalcula: consulta `getAsset` antes de enviar, verifica o pai
+  (`waiting_parent` se o lote ainda não está on-chain), reenvia o hash guardado
+  e, se o envio falha, reconsulta `getAsset` antes de classificar. Mesma
+  classificação do lab: `sent`, `already_onchain`, `mismatch`, `waiting_parent`,
+  `in_flight` (`Known transaction`: tarefa segue `pending`, INFO no log) e
+  `failed`.
+- **Mismatch = divergência on-chain.** Asset já on-chain com hash DIFERENTE do
+  guardado: tarefa `mismatch`, nunca `anchored`, reexaminada a cada retry.
+- **409 na reemissão.** Um documento por lote: se já existe `AnchoringTask` para
+  o batchNumber (em qualquer estado), `POST /credential` responde 409 ANTES de
+  assinar e antes de consumir o `c_nonce` — nenhuma VC nova, nenhuma tarefa nova.
+  Limite: se a tarefa for perdida, a reemissão volta a ser possível.
+- **`tests/conftest.py` estendido ao Fuseki do certifier.** Limpa, antes e depois
+  de cada teste, TODAS as tarefas dos batchNumbers da allowlist (órfãs ou não),
+  agora com `CERTOUT[1-6]`. Necessário por dois motivos: os testes antigos de
+  batchNumber fixo (`MS-2026-042`, `MN-2026-015`) emitem a VC a cada rodada com o
+  asset já on-chain com outro hash (viraria `mismatch`), e a tarefa existente
+  bloquearia a emissão da rodada seguinte (409). Batchs fora da lista não são
+  tocados.
+
+Feito em BDD (`tests/features/ancoragem_outbox_certifier.feature`, 6 cenários:
+hash guardado ainda não on-chain; recibo perdido + segundo retry vazio; mismatch;
+`waiting_parent`; `in_flight`; reemissão 409). RED confirmado antes: 404 em
+`POST /anchoring/retry`, tarefa não gravada pelo `POST /credential` real,
+`AttributeError` no helper de injeção e `200` na reemissão. O recibo perdido e o
+mismatch usam `POST /credential` REAL e conferem o hash guardado contra
+`keccak256(credential)` calculado pelo próprio teste. `in_flight` usa a mesma
+exceção de teste dos outros nós (só a resposta do nó ao envio é simulada).
+
+Suíte: **41 passed, 3 deselected** — 2 rodadas seguidas (os 35 anteriores + 6 do
+certifier). Mesma ressalva de ambiente: depende de máquina acordada e túnel do
+Besu ativo. **Limites conhecidos** (`docs/known-issues.md`): tarefa perdida =
+hash irrecuperável (a VC já entregue fica sem ancoragem); como o hash é o do
+SD-JWT completo, a divulgação seletiva real (apresentar só parte das
+disclosures) não passaria na verificação do M7 — não testado com apresentação
+parcial real.
+

@@ -12,12 +12,16 @@ Esta fixture apaga, antes e depois de cada teste, AnchoringTask cujo
 batchNumber é um dos usados pelos testes (allowlist `_TEST_BATCH_PATTERN`):
 - coop-a e coop-b: só as ÓRFÃS (nenhum recurso do Fuseki com o mesmo
   agritrust:batchNumber, ou seja, o lote já foi apagado);
-- LAB: TODAS as da allowlist, órfãs ou não. Motivo: testes antigos de
+- LAB e CERTIFIER: TODAS as da allowlist, órfãs ou não. Motivo: testes antigos de
   batchNumber fixo (MS-2026-042, MN-2026-015, MS-2026-042-LAB-REJEITADO)
   repostam o laudo a cada rodada e nunca o apagam do lab; a ancoragem reverte
   (asset já existe) e a tarefa sobra pending/mismatch COM o laudo presente, logo
   não-órfã. No lab essas tarefas são dados de teste; sem limpá-las o "nada a
-  processar" de ancoragem_outbox_lab.feature não vale para o Fuseki inteiro. Tarefas de
+  processar" de ancoragem_outbox_lab.feature não vale para o Fuseki inteiro.
+  No CERTIFIER há um motivo a mais: a tarefa existente BLOQUEIA a reemissão
+  (POST /credential responde 409 para um lote que já tem tarefa), então os testes
+  antigos de batchNumber fixo (MS-2026-042, MN-2026-015) que emitem a VC a cada
+  rodada só funcionam se a tarefa da rodada anterior for limpa antes. Tarefas de
 lotes existentes, ou de batchNumbers fora da allowlist (dados reais), nunca
 são tocadas. Se um teste novo usar um batchNumber fora da allowlist, a
 tarefa órfã dele sobra e o "nada a processar" do outbox falha — sinal para
@@ -36,13 +40,14 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 # Todo teste novo que cria batchNumber sintético precisa adicionar o prefixo
 # aqui, senão a AnchoringTask dele não é limpa (órfã em coop-a/coop-b; órfã ou
 # não no lab) e quebra o bloco 'nada a processar' de ancoragem_outbox.feature /
-# ancoragem_outbox_lab.feature. (OUTBOX[1-5] = tests de coop-a/coop-b;
-# LABOUT[1-6] = tests do lab.)
+# ancoragem_outbox_lab.feature / ancoragem_outbox_certifier.feature (e, no certifier,
+# faz o POST /credential do lote responder 409 na rodada seguinte). (OUTBOX[1-5] = tests de coop-a/coop-b;
+# LABOUT[1-6] = tests do lab; CERTOUT[1-6] = tests do certifier.)
 _TEST_BATCH_PATTERN = (
     r"^(MN-2026-015|MS-2026-042|MS-2026-042-LAB-REJEITADO"
     r"|MS-2026-042-REEMISSAO-.+|MEL-SILVESTRE-.+"
     r"|MN-2026-(MELIP|MELIP-SEMLIC|REUSE1|REUSE2)-.+"
-    r"|MS-2026-(ANCCERT|ANCLAUDO|ANCORA|APRESVP|HOLDERVC|VALIDAVP|VERIFYOC|OUTBOX[1-5]|LABOUT[1-6])-.+)$"
+    r"|MS-2026-(ANCCERT|ANCLAUDO|ANCORA|APRESVP|HOLDERVC|VALIDAVP|VERIFYOC|OUTBOX[1-5]|LABOUT[1-6]|CERTOUT[1-6])-.+)$"
 )
 # LAB: tarefas da allowlist, órfãs ou não (ver docstring do módulo).
 _ALLOWLISTED_TASKS_UPDATE = """
@@ -71,6 +76,7 @@ def _purge_orphan_tasks():
         ("coop-a", "http://127.0.0.1:3030/coop-a", _ORPHAN_TASKS_UPDATE),
         ("coop-b", "http://127.0.0.1:3031/coop-b", _ORPHAN_TASKS_UPDATE),
         ("lab", "http://127.0.0.1:3033/lab", _ALLOWLISTED_TASKS_UPDATE),
+        ("certifier", "http://127.0.0.1:3032/certifier", _ALLOWLISTED_TASKS_UPDATE),
     ):
         env = dotenv_values(_REPO_ROOT / node / ".env")
         try:

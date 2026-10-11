@@ -289,5 +289,125 @@ def anchor_certification(
 
     except Exception as exc:  # noqa: BLE001 - nunca deixa exceção escapar (rede/revert/timeout/gas)
         error_msg = _describe_rpc_error(exc)
-        logger.error("Erro ao ancorar VC de certificação do lote %r on-chain: %s", batch_number, error_msg)
+        if is_known_transaction_error(error_msg):
+            # tx idêntica já na fila (em voo): não é erro; o retry decide (ver
+            # `_retry_one` em credential_endpoint.py). INFO, não ERROR.
+            logger.info("VC de certificação do lote %r: tx já está em voo no nó (%s)", batch_number, KNOWN_TRANSACTION_MARKER)
+        else:
+            logger.error("Erro ao ancorar VC de certificação do lote %r on-chain: %s", batch_number, error_msg)
         return False, None, error_msg
+
+
+# --- Detecção de "Known transaction" (tx em voo) ---------------------------
+KNOWN_TRANSACTION_MARKER = "Known transaction"
+
+
+def is_known_transaction_error(error: str | None) -> bool:
+    """O Besu responde 'Known transaction' (-32000) quando a MESMA tx assinada
+    já está na fila dele, ainda não minerada: ela está "em voo", não falhou."""
+    return bool(error) and KNOWN_TRANSACTION_MARKER in error
+
+
+# --- Leitura on-chain (outbox/retry) ---------------------------------------
+# Mesmo caminho de leitura de coop-a/anchoring.py, lab/anchoring.py e verifier-demo/
+# onchain_verification.py: AssetRegistry resolvido AO VIVO via AddressDiscovery;
+# `getAsset(channel, assetId)` é `view` (sem conta, sem gas, sem tx).
+ADDRESS_DISCOVERY_ADDRESS = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e"
+
+_ADDRESS_DISCOVERY_ABI = [
+    {
+        "inputs": [{"internalType": "bytes32", "name": "nameHash", "type": "bytes32"}],
+        "name": "getContractAddress",
+        "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function",
+    }
+]
+
+# Struct Asset (16 campos) — ordem/tipos CONFIRMADOS em
+# docs/referencia-contratos/README.md seção 6.
+_ASSET_TUPLE_COMPONENTS = [
+    {"internalType": "bytes32", "name": "assetId", "type": "bytes32"},
+    {"internalType": "string", "name": "channelName", "type": "string"},
+    {"internalType": "address", "name": "owner", "type": "address"},
+    {"internalType": "bytes32", "name": "parentAssetId", "type": "bytes32"},
+    {"internalType": "uint256", "name": "amount", "type": "uint256"},
+    {"internalType": "uint256", "name": "unknown1", "type": "uint256"},
+    {"internalType": "string", "name": "idLocal", "type": "string"},
+    {"internalType": "bytes32[]", "name": "dataHashes", "type": "bytes32[]"},
+    {"internalType": "uint256", "name": "unknown2", "type": "uint256"},
+    {"internalType": "uint256", "name": "unknown3", "type": "uint256"},
+    {"internalType": "uint256[]", "name": "unknown4", "type": "uint256[]"},
+    {"internalType": "uint256", "name": "unknown5", "type": "uint256"},
+    {"internalType": "uint256", "name": "unknown6", "type": "uint256"},
+    {"internalType": "uint256[]", "name": "unknown7", "type": "uint256[]"},
+    {"internalType": "uint256", "name": "createdAt", "type": "uint256"},
+    {"internalType": "uint256", "name": "updatedAt", "type": "uint256"},
+]
+
+_GET_ASSET_ABI = [
+    {
+        "inputs": [
+            {"internalType": "string", "name": "channelName", "type": "string"},
+            {"internalType": "bytes32", "name": "assetId", "type": "bytes32"},
+        ],
+        "name": "getAsset",
+        "outputs": [
+            {"internalType": "struct Asset", "name": "asset", "type": "tuple", "components": _ASSET_TUPLE_COMPONENTS},
+            {"internalType": "bool", "name": "exists", "type": "bool"},
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    }
+]
+
+_cached_asset_registry = None
+
+
+def _get_onchain_data_hash_raw(asset_id: bytes) -> tuple[bool, bytes | None]:
+    """`getAsset(CHANNEL_NAME, asset_id)` -> `(exists, dataHashes[0] | None)`.
+    LEVANTA exceção em erro de rede/RPC: o retry precisa distinguir "asset não
+    existe" (seguro enviar) de "não consegui consultar" (NÃO pode enviar às cegas)."""
+    global _cached_asset_registry
+
+    if _cached_asset_registry is None:
+        w3 = Web3(Web3.HTTPProvider(RPC_URL, request_kwargs={"timeout": 10}))
+        if not w3.is_connected():
+            raise ConnectionError("Não foi possível conectar ao RPC do Besu (tunel SSH pode estar fora).")
+        if w3.eth.chain_id != EXPECTED_CHAIN_ID:
+            raise ValueError(f"chain_id inesperado: {w3.eth.chain_id} (esperado {EXPECTED_CHAIN_ID}).")
+        discovery = w3.eth.contract(
+            address=Web3.to_checksum_address(ADDRESS_DISCOVERY_ADDRESS), abi=_ADDRESS_DISCOVERY_ABI
+        )
+        registry_address = discovery.functions.getContractAddress(Web3.keccak(text="ASSET_REGISTRY")).call()
+        _cached_asset_registry = w3.eth.contract(
+            address=Web3.to_checksum_address(registry_address), abi=_GET_ASSET_ABI
+        )
+
+    asset, exists = _cached_asset_registry.functions.getAsset(CHANNEL_NAME, asset_id).call()
+    if not exists:
+        return False, None
+    data_hashes = asset[7]
+    return True, (bytes(data_hashes[0]) if data_hashes else None)
+
+
+def _read_asset(asset_id: bytes) -> tuple[bool, bytes | None]:
+    """Timeout/conexão recusada no RPC viram ConnectionError com a mensagem
+    "RPC/túnel não respondeu" (mesma convenção de `anchor_lab_analysis`)."""
+    try:
+        return _get_onchain_data_hash_raw(asset_id)
+    except (_ReqConnectionError, _ReqTimeout, TimeExhausted) as exc:
+        raise ConnectionError(_describe_rpc_error(exc)) from exc
+
+
+def get_onchain_data_hash(batch_number: str) -> tuple[bool, bytes | None]:
+    """A VC DE CERTIFICAÇÃO já está on-chain? assetId = keccak256(batch_number +
+    "-certification"). Retorna `(exists, dataHashes[0] | None)`."""
+    return _read_asset(Web3.keccak(text=f"{batch_number}-certification"))
+
+
+def parent_exists_onchain(batch_number: str) -> bool:
+    """O PAI (asset do lote, ancorado pelo coop-a/coop-b) já está on-chain?
+    assetId = keccak256(batch_number) — o mesmo `parentAssetId` da VC. Sem o
+    pai, `createDocument` reverte; o retry espera (`waiting_parent`)."""
+    return _read_asset(Web3.keccak(text=batch_number))[0]

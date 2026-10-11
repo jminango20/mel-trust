@@ -98,7 +98,7 @@ Credential-JWT contra o `AssetRegistry`. Resultado:
 apresentada — confirmado manualmente ponta a ponta. Detalhes completos:
 `CHANGELOG.md`.
 
-## Outbox de ancoragem (coop-a e coop-b) — ✅ testado e confirmado (2026-10-09)
+## Outbox de ancoragem (coop-a, coop-b, lab e certifier) — ✅ testado e confirmado (2026-10-12)
 
 `POST /lote` grava uma `AnchoringTask` (recurso separado do lote — não
 altera o hash ancorado) `pending` → ancora → `anchored`. `POST
@@ -109,21 +109,25 @@ responde `Known transaction` (tx já na fila) o resultado é `in_flight` — a
 tarefa segue `pending` e a próxima passada conclui (testado e confirmado,
 2026-10-11). O `lab` tem o mesmo outbox para o LAUDO
 (testado e confirmado, 2026-10-11): idem, mais `waiting_parent`
-quando o lote (pai) ainda não está on-chain. **Lacunas
-conhecidas** (`docs/known-issues.md`): `certifier` ainda sem outbox
-(falha fica `anchoring_failed` sem retry); allowlist de
+quando o lote (pai) ainda não está on-chain. O `certifier` tem o mesmo outbox
+para a VC de certificação (testado e confirmado, 2026-10-12): a tarefa GUARDA o
+hash do SD-JWT emitido (não recalculável) e o natureId, o retry reenvia o hash
+guardado, e `POST /credential` responde 409 se o lote já tem certificação.
+**Lacunas conhecidas** (`docs/known-issues.md`): tarefa do certifier perdida =
+hash irrecuperável; allowlist de
 `tests/conftest.py` precisa de atualização a cada teste novo com
 batchNumber sintético. Detalhes: `CHANGELOG.md`.
 
 ## Suíte de testes BDD (`tests/`)
 
-35 testes passando (`tests/features/*.feature`, `pytest tests/`), zero
+41 testes passando (`tests/features/*.feature`, `pytest tests/`), zero
 falha, suíte repetível (2 rodadas seguidas, resultado idêntico). São os 22
 cenários anteriores + 4 do outbox de ancoragem (2 cenários ×
 coop-a/coop-b, ver seção acima) + 4 do tratamento de `in_flight`/revert real
 (2 cenários × coop-a/coop-b) + 5 do outbox do laudo no lab
-(`ancoragem_outbox_lab.feature`), todos testados e confirmados por Juan
-(2026-10-11). **Só passa com a máquina
+(`ancoragem_outbox_lab.feature`) + 6 do outbox da VC no certifier
+(`ancoragem_outbox_certifier.feature`), todos testados e confirmados por Juan
+(2026-10-11 e 2026-10-12). **Só passa com a máquina
 acordada e o túnel do Besu ativo** (ver `docs/known-issues.md`).
 3 cenários adicionais marcados `@futuro` (deselecionados por padrão via
 `pytest.ini`).
@@ -140,7 +144,9 @@ processos registrados (`SchemaRegistry`/`ProcessRegistry`). Ancoragem real
 via `TransactionOrchestrator.submitTransaction` nos 3 eventos (lote via
 `POST /lote`, laudo via `POST /analise`, certificação via
 `POST /credential`), cada resposta com `anchoringStatus`/`txHash`
-explícitos. Verificação de integridade on-chain em `verifier-demo`
+explícitos, e **os três eventos têm outbox** com `POST /anchoring/retry`
+(lote em coop-a/coop-b, laudo no lab, certificação no certifier; ver a
+seção do outbox acima). Verificação de integridade on-chain em `verifier-demo`
 (`GET /verify` ganha `onChainIntegrity`) via `AssetRegistry.getAsset()` —
 lote e laudo comparados de verdade (hash recalculado via SPARQL
 `CONSTRUCT`); certificação, SEM uma VP apresentada, fica
