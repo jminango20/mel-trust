@@ -35,7 +35,6 @@ ancora o hash H1; depois o `rdf:type` do lote é trocado direto no Fuseki
 CONSTRUCT, então o hash recalculado passa a ser H2 != H1, com o asset
 on-chain intacto.
 """
-import importlib.util
 import sys
 import uuid
 from pathlib import Path
@@ -48,6 +47,8 @@ from web3 import Web3
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "tests" / "support"))
+from load_node_module import load_node_module  # noqa: E402
 
 scenarios("../features/ancoragem_outbox.feature")
 
@@ -369,16 +370,10 @@ _anchoring_modules: dict = {}
 
 
 def _node_anchoring(node: dict):
-    """Carrega `<nó>/anchoring.py` por caminho (coop-a e coop-b têm módulos
-    com o mesmo nome, então cada um recebe um nome único)."""
+    """Carrega `<nó>/anchoring.py` (isolado, ver tests/support/load_node_module.py)."""
     name = node["name"]
     if name not in _anchoring_modules:
-        spec = importlib.util.spec_from_file_location(
-            f"_anchoring_{name.replace('-', '_')}", REPO_ROOT / name / "anchoring.py"
-        )
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        _anchoring_modules[name] = mod
+        _anchoring_modules[name] = load_node_module(name, "anchoring.py", "anchoring")
     return _anchoring_modules[name]
 
 

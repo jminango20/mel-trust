@@ -51,7 +51,6 @@ Como cada estado é plantado (sem flag de falha no código de produção):
   (tests/support/run_retry_injected.py), mesma exceção dos outros nós.
 "Nada reenviado" é verificado pelo nonce da conta Besu do certifier.
 """
-import importlib.util
 import json
 import subprocess
 import sys
@@ -67,6 +66,8 @@ from web3 import Web3
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "tests" / "support"))
+from load_node_module import load_node_module  # noqa: E402
 from scripts.test_credential_flow import GRANT_TYPE, build_proof_jwt  # noqa: E402
 
 scenarios("../features/ancoragem_outbox_certifier.feature")
@@ -244,11 +245,8 @@ def _besu_nonce() -> int:
 
 
 def _module(node: str, filename: str, alias: str):
-    """Carrega `<nó>/<filename>` por caminho (nomes colidem entre os nós)."""
-    spec = importlib.util.spec_from_file_location(f"_{node}_{alias}", REPO_ROOT / node / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    """Carrega `<nó>/<filename>` (isolado, ver tests/support/load_node_module.py)."""
+    return load_node_module(node, filename, alias)
 
 
 def _onchain_cert_hash(batch: str) -> tuple[bool, bytes | None]:

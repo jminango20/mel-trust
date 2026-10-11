@@ -30,7 +30,6 @@ endereço mudar (redeploy), esta constante precisa ser atualizada aqui e em
 todo outro script que a hardcoded — mesmo trade-off já aceito no resto do
 projeto.
 """
-import importlib.util
 import logging
 import os
 
@@ -38,6 +37,14 @@ from requests.exceptions import ConnectionError as _ReqConnectionError
 from requests.exceptions import Timeout as _ReqTimeout
 from web3 import Web3
 from web3.exceptions import TimeExhausted
+
+from config import (
+    ADDRESS_DISCOVERY_ADDRESS,
+    CHANNEL_NAME,
+    EXPECTED_CHAIN_ID,
+    RPC_URL,
+    TRANSACTION_ORCHESTRATOR_ADDRESS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,36 +74,6 @@ def _describe_rpc_error(exc: Exception) -> str:
         )
     return f"{type(exc).__name__}: {exc}"
 
-# Rede, contratos e canal vêm do config.py DESTE nó (variáveis BESU_*, com os
-# valores confirmados como default; ver config.py). Carregado POR CAMINHO, e não
-# com `from config import ...`, porque os testes do outbox carregam este módulo
-# por caminho a partir de fora do diretório do nó, onde `import config` não
-# resolve (nem seria o config certo: coop-a e coop-b têm módulos de mesmo nome).
-def _load_node_config():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.py")
-    name = "_" + os.path.basename(os.path.dirname(path)).replace("-", "_") + "_anchoring_config"
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    # config.py chama load_dotenv(), que ESCREVE o .env do nó em os.environ. Quando
-    # este módulo é carregado por caminho dentro de OUTRO processo (os testes do
-    # outbox), isso vazaria o .env deste nó (FUSEKI_URL, senha...) e os subprocessos
-    # herdariam o do primeiro nó carregado — load_dotenv() não sobrescreve variáveis
-    # já definidas. As constantes são lidas durante o exec; depois restaura-se o ambiente.
-    saved_env = dict(os.environ)
-    try:
-        spec.loader.exec_module(module)
-    finally:
-        os.environ.clear()
-        os.environ.update(saved_env)
-    return module
-
-
-_cfg = _load_node_config()
-RPC_URL = _cfg.RPC_URL
-EXPECTED_CHAIN_ID = _cfg.EXPECTED_CHAIN_ID
-TRANSACTION_ORCHESTRATOR_ADDRESS = _cfg.TRANSACTION_ORCHESTRATOR_ADDRESS
-ADDRESS_DISCOVERY_ADDRESS = _cfg.ADDRESS_DISCOVERY_ADDRESS
-CHANNEL_NAME = _cfg.CHANNEL_NAME
 PROCESS_ID = "honey-batch-registration"
 STAGE_ID = "creation"
 

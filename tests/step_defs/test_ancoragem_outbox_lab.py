@@ -36,7 +36,6 @@ Como cada estado é plantado (sem flag de falha no código de produção):
 - "in_flight": mesma exceção do lote — só a resposta do nó ao envio é
   simulada (tests/support/run_retry_injected.py), ver o comentário lá.
 """
-import importlib.util
 import json
 import subprocess
 import sys
@@ -51,6 +50,8 @@ from rdflib import Graph
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "tests" / "support"))
+from load_node_module import load_node_module  # noqa: E402
 
 scenarios("../features/ancoragem_outbox_lab.feature")
 
@@ -201,11 +202,8 @@ def _besu_nonce() -> int:
 
 
 def _lab_module(filename: str, alias: str):
-    """Carrega `lab/<filename>` por caminho (nomes como `anchoring`/`hash_utils` colidem com os dos outros nós)."""
-    spec = importlib.util.spec_from_file_location(f"_lab_{alias}", REPO_ROOT / "lab" / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    """Carrega `lab/<filename>` (isolado, ver tests/support/load_node_module.py)."""
+    return load_node_module("lab", filename, alias)
 
 
 _LAUDO_CONSTRUCT_TEMPLATE = """
