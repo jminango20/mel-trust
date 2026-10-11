@@ -106,9 +106,9 @@ altera o hash ancorado) `pending` → ancora → `anchored`. `POST
 → só marca `anchored`; asset ausente → envia a tx; hash diferente →
 `mismatch`, reportado a cada retry e nunca marcado `anchored`; se o envio
 responde `Known transaction` (tx já na fila) o resultado é `in_flight` — a
-tarefa segue `pending` e a próxima passada conclui (implementado, confirmação
-do Juan pendente). O `lab` tem o mesmo outbox para o LAUDO
-(implementado, confirmação do Juan pendente): idem, mais `waiting_parent`
+tarefa segue `pending` e a próxima passada conclui (testado e confirmado,
+2026-10-11). O `lab` tem o mesmo outbox para o LAUDO
+(testado e confirmado, 2026-10-11): idem, mais `waiting_parent`
 quando o lote (pai) ainda não está on-chain. **Lacunas
 conhecidas** (`docs/known-issues.md`): `certifier` ainda sem outbox
 (falha fica `anchoring_failed` sem retry); allowlist de
@@ -120,10 +120,10 @@ batchNumber sintético. Detalhes: `CHANGELOG.md`.
 35 testes passando (`tests/features/*.feature`, `pytest tests/`), zero
 falha, suíte repetível (2 rodadas seguidas, resultado idêntico). São os 22
 cenários anteriores + 4 do outbox de ancoragem (2 cenários ×
-coop-a/coop-b, ver seção acima), todos confirmados por Juan, + 4 do
-tratamento de `in_flight`/revert real (2 cenários × coop-a/coop-b) rodados
-pelo agente, + 5 do outbox do laudo no lab (`ancoragem_outbox_lab.feature`),
-também rodados pelo agente, **ainda sem confirmação do Juan**. **Só passa com a máquina
+coop-a/coop-b, ver seção acima) + 4 do tratamento de `in_flight`/revert real
+(2 cenários × coop-a/coop-b) + 5 do outbox do laudo no lab
+(`ancoragem_outbox_lab.feature`), todos testados e confirmados por Juan
+(2026-10-11). **Só passa com a máquina
 acordada e o túnel do Besu ativo** (ver `docs/known-issues.md`).
 3 cenários adicionais marcados `@futuro` (deselecionados por padrão via
 `pytest.ini`).

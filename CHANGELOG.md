@@ -526,7 +526,7 @@ com batchNumber sintético; o retry pode correr contra uma tx ainda em voo
 (`Known transaction` — fica `pending`, correção `in_flight` proposta, não
 implementada). Tudo em `docs/known-issues.md`.
 
-## Outbox: retry trata "Known transaction" como in_flight (coop-a e coop-b) — implementado; confirmação do Juan pendente
+## Outbox: retry trata "Known transaction" como in_flight (coop-a e coop-b) — ✅ testado e confirmado
 
 Antes, um retry que encontrasse a tx original ainda na fila do Besu
 (`getAsset` só enxerga tx minerada) reenviava, recebia `Known transaction` e
@@ -545,11 +545,15 @@ documentada**: a janela "em voo" da chain real não é reproduzível (retry leva
 ao envio, via `tests/support/run_retry_injected.py` (`retry_anchoring()` real em
 processo próprio); detalhes e medições em `docs/known-issues.md`.
 
-Suíte: 30 passed, 3 deselected — 2 rodadas seguidas, executadas pelo agente
-(os 26 anteriores confirmados por Juan + 4 novos: 2 cenários × coop-a/coop-b).
+Suíte: 30 passed, 3 deselected — 2 rodadas seguidas (os 26 anteriores + 4
+novos: 2 cenários × coop-a/coop-b).
+
+**Confirmado por Juan em 2026-10-11** (leu `35 passed` nas duas rodadas da suíte
+completa, que inclui estes 4 testes).
+
 Mesma ressalva de ambiente: depende de máquina acordada e túnel do Besu ativo.
 
-## Outbox de ancoragem do laudo (lab) — implementado; confirmação do Juan pendente
+## Outbox de ancoragem do laudo (lab) — ✅ testado e confirmado
 
 `lab` ganha o mesmo outbox do lote: `POST /analise` grava uma `AnchoringTask`
 em recurso SEPARADO no Fuseki do lab (`pending` → ancora → `anchored`; o hash é
@@ -585,8 +589,9 @@ lab; allowlist com `MS-2026-LABOUT[1-6]-…` e, corrigindo uma lacuna antiga,
 `MS-2026-OUTBOX[1-5]-…` (os testes de in_flight/revert do lote usam `OUTBOX4/5`
 e a allowlist só tinha `[123]`).
 
-Suíte: 35 passed, 3 deselected — 2 rodadas seguidas, executadas pelo agente
-(os 30 anteriores + 5 do outbox do lab). Uma tentativa anterior falhou na 2ª
+Suíte: 35 passed, 3 deselected — 2 rodadas seguidas (os 30 anteriores + 5 do
+outbox do lab). **Confirmado por Juan em 2026-10-11** (leu `35 passed` nas duas
+rodadas). Uma tentativa anterior falhou na 2ª
 rodada (2 failed) por asserções globais vendo tarefas de testes antigos de
 batchNumber fixo (MS-2026-042, MN-2026-015, MS-2026-042-LAB-REJEITADO, que
 repostam o laudo a cada rodada). Resolvido a pedido do Juan: o `conftest.py`
