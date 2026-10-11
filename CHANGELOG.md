@@ -663,3 +663,39 @@ SD-JWT completo, a divulgação seletiva real (apresentar só parte das
 disclosures) não passaria na verificação do M7 — não testado com apresentação
 parcial real.
 
+## Limpeza sem mudança de comportamento (2026-10-12) — ✅ testado e confirmado
+
+**Confirmado por Juan em 2026-10-12** (leu `41 passed` nas duas rodadas).
+
+- **Imports sem uso removidos** (5): `Web3` em `coop-a/lote_endpoint.py` e
+  `lab/analise_endpoint.py`; `time`, `Web3` e `b64url_json` em três testes do
+  outbox. Antes de cada remoção, grep confirmou que nenhum outro arquivo importava
+  esse nome desse módulo.
+- **Constantes de Besu em `config.py`** (coop-a, coop-b, lab, certifier e, para as
+  quatro de leitura, verifier-demo): endereço do TransactionOrchestrator, do
+  AddressDiscovery, chainId, `RPC_URL` e nome do canal, lidos de variáveis `BESU_*`
+  (`BESU_RPC_URL`, `BESU_CHAIN_ID`, `BESU_TRANSACTION_ORCHESTRATOR_ADDRESS`,
+  `BESU_ADDRESS_DISCOVERY_ADDRESS`, `BESU_CHANNEL_NAME`) com os MESMOS valores de antes
+  como default (o RPC continua `localhost:8545`). Os `anchoring.py` e
+  `onchain_verification.py` fazem `from config import …`. `scripts/` não foi tocado.
+- **`tests/support/load_node_module.py`.** Os testes do outbox carregam módulos dos nós
+  (`<nó>/anchoring.py`, `lab/hash_utils.py`) por caminho, e o nome `config` existe nos 5
+  nós. Sem isolação, o primeiro carregamento deixa o diretório do nó em `sys.path`, o
+  `config` em cache em `sys.modules` (o segundo nó recebia o do primeiro) e, pelo
+  `load_dotenv()` do `config.py`, o `.env` em `os.environ` — e foi esse último que vazou o
+  `.env` do coop-a para os subprocessos dos testes de `in_flight` (lab, certifier e
+  coop-b liam o Fuseki do coop-a; 3 falhas, `processed: 0`). O helper isola
+  `sys.path`, `sys.modules` e `os.environ` e restaura tudo no `finally`, inclusive se o
+  import falhar; os 3 carregadores dos testes viraram chamadas curtas a ele.
+  `tests/support/check_load_node_module.py` (manual, fora da coleta do pytest) confirma
+  que o `FUSEKI_URL` de cada nó é o do próprio nó e que o estado do processo volta ao
+  inicial.
+- **Resultado:** sem mudança de lógica, de nomes de função nem de formato de resposta.
+  Suíte: 41 passed, 3 deselected — 2 rodadas seguidas.
+
+**Dívida registrada:** a lógica do retry existe em 4 cópias (`lote_endpoint.py` do
+coop-a e do coop-b, `analise_endpoint.py` do lab, `credential_endpoint.py` do
+certifier). coop-a e coop-b são idênticos por AST; lab e certifier divergem só no
+esperado (`waiting_parent`, natureId resolvido por consulta federada no lab / hash e
+natureId guardados na tarefa no certifier). Qualquer ajuste de classificação precisa
+ser replicado nas quatro; extrair para um módulo comum fica como decisão futura.
