@@ -307,12 +307,22 @@ def load_certifier_private_key() -> str:
     return private_key
 
 
-def compute_data_hash() -> bytes:
-    """Le validation-shapes.ttl como bytes crus e calcula keccak256.
+def canonical_schema_hash(path) -> bytes:
+    """keccak256 dos BYTES do arquivo com CRLF trocado por LF.
 
-    Bytes crus, sem decodificar/normalizar — o hash deve refletir
-    exatamente o conteudo do arquivo tal como esta em disco agora.
+    Forma canonica: o repositorio guarda .ttl em LF (.gitattributes
+    "*.ttl text eol=lf"), mas no Windows o arquivo em disco pode estar em
+    CRLF (core.autocrlf). Normalizar para LF faz o hash ser o mesmo em
+    qualquer maquina/CI. Nao decodifica como texto; so troca b"\\r\\n" por
+    b"\\n".
     """
+    raw = Path(path).read_bytes()
+    return Web3.keccak(raw.replace(b"\r\n", b"\n"))
+
+
+def compute_data_hash() -> bytes:
+    """Calcula o dataHash do validation-shapes.ttl pela forma canonica
+    (canonical_schema_hash: bytes com CRLF -> LF, keccak256)."""
     print("=" * 70)
     print("PASSO 0: calculo do dataHash (keccak256 do conteudo do .ttl)")
     print("=" * 70)
@@ -322,11 +332,10 @@ def compute_data_hash() -> bytes:
         print(f"ERRO: arquivo nao encontrado em {VALIDATION_SHAPES_PATH}", file=sys.stderr)
         sys.exit(1)
 
-    raw_bytes = VALIDATION_SHAPES_PATH.read_bytes()
-    print(f"Tamanho do arquivo: {len(raw_bytes)} bytes")
+    print(f"Tamanho do arquivo em disco: {VALIDATION_SHAPES_PATH.stat().st_size} bytes")
 
-    data_hash = Web3.keccak(raw_bytes)
-    print(f"keccak256(conteudo) = {data_hash.hex()}")
+    data_hash = canonical_schema_hash(VALIDATION_SHAPES_PATH)
+    print(f"keccak256(conteudo canonico, CRLF->LF) = {data_hash.hex()}")
     print()
     return data_hash
 
