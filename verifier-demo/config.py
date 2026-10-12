@@ -70,7 +70,7 @@ CERTIFIER_SPARQL_SERVICE_URL = os.environ.get(
 # Lidos por onchain_verification.py. Variáveis com prefixo BESU_; os DEFAULTS são os
 # valores confirmados em docs/referencia-contratos/README.md — sem a variável, nada
 # muda. O verifier só LÊ (getAsset): não usa o TransactionOrchestrator.
-RPC_URL = os.environ.get("BESU_RPC_URL", "http://localhost:8545")
+RPC_URL = os.environ.get("BESU_RPC_URL", "http://127.0.0.1:8545")
 EXPECTED_CHAIN_ID = int(os.environ.get("BESU_CHAIN_ID", "648"))
 ADDRESS_DISCOVERY_ADDRESS = os.environ.get(
     "BESU_ADDRESS_DISCOVERY_ADDRESS", "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e"

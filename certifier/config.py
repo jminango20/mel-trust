@@ -128,7 +128,7 @@ LAB_SPARQL_SERVICE_URL = os.environ.get(
 # docs/referencia-contratos/README.md — sem a variável, nada muda.
 # `localhost` (não 127.0.0.1) no RPC é o valor histórico dos nós; ver
 # docs/known-issues.md sobre o custo do `localhost` no Windows.
-RPC_URL = os.environ.get("BESU_RPC_URL", "http://localhost:8545")
+RPC_URL = os.environ.get("BESU_RPC_URL", "http://127.0.0.1:8545")
 EXPECTED_CHAIN_ID = int(os.environ.get("BESU_CHAIN_ID", "648"))
 # TransactionOrchestrator: endereço já CONFIRMADO (seção 5 do README dos contratos),
 # hardcoded por default e não resolvido via AddressDiscovery em runtime (o contrato
