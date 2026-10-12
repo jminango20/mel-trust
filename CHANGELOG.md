@@ -699,3 +699,43 @@ certifier). coop-a e coop-b são idênticos por AST; lab e certifier divergem s�
 esperado (`waiting_parent`, natureId resolvido por consulta federada no lab / hash e
 natureId guardados na tarefa no certifier). Qualquer ajuste de classificação precisa
 ser replicado nas quatro; extrair para um módulo comum fica como decisão futura.
+
+## Schema `honey-validation-shapes` v2 on-chain, sincronização schema ↔ arquivo e proteção da limpeza do conftest — ✅ testado e confirmado
+
+**Confirmado por Juan em 2026-10-12** (leu `44 passed, 3 deselected`).
+
+- **Schema na versão 2 on-chain.** O `dataHash` da v1 correspondia ao
+  `ontology/validation-shapes.ttl` ANTES do commit `f905fcd` (correção do `sh:Info` de
+  `HoneyNativeMoistureShape` e `CertificateShape`), e o arquivo, hasheado em CRLF no Windows,
+  não reproduzia em outra máquina. A v2 foi registrada via `SchemaRegistry.updateSchema`
+  (`SchemaUpdateInput{schemaId, newDataHash, channelName, description}`, sem retorno), assinada
+  pela conta do certifier, com `newDataHash` = **hash canônico** (keccak256 dos bytes do
+  arquivo com CRLF trocado por LF, `canonical_schema_hash` em
+  `scripts/blockchain/create_schema.py`) = `0x01caa3b415dd4b930f2306b57e2de9c6bba8e7f64e85eeefb482178590e75750`.
+  Antes: certifier membro do canal, `getActiveSchema` com owner = certifier, versão 1, status 0;
+  simulação com `.call()` sem revert. Tx `0x5e2a1c4defd80d7c8951d375eebe51ee3fc588ba8c976b134ecfe081dc32bd1d`,
+  status 1, bloco 6572849. Depois: `getActiveSchema` = versão 2, ACTIVE, `dataHash` canônico;
+  `getSchemaByVersion(…, 1)` = DEPRECATED. A descrição on-chain foi conferida byte a byte
+  contra a enviada (idêntica; a troca de caracteres vista antes era só do console).
+  Script: `scripts/blockchain/update_schema.py`. A ancoragem de lote, laudo e certificação
+  continuou funcionando (`test_ancoragem_lote/laudo/certificacao.py` e a suíte completa).
+- **`.gitattributes` `*.ttl text eol=lf`.** O índice já guardava LF; o arquivo e o hash deixam
+  de depender da conversão de fim de linha de cada máquina (`git add --renormalize .` não
+  mudou nenhum arquivo).
+- **Teste de sincronização schema ↔ arquivo** (`tests/features/schema_sincronizado.feature`):
+  o `dataHash` do schema ativo on-chain tem de ser igual ao hash canônico do `.ttl`. Se o
+  arquivo mudar sem nova versão, falha com "Schema on-chain desatualizado: rode
+  scripts/blockchain/update_schema.py", versão e os dois hashes (mensagem exercitada por
+  monkeypatch do hash, sem editar o `.ttl`).
+- **Proteção da limpeza do `tests/conftest.py`** (`tests/features/conftest_allowlist.feature`,
+  coop-a e coop-b): planta no Fuseki uma tarefa órfã de batchNumber fora da allowlist
+  (`LOTE-REAL-PROTEGIDO-<uuid>`), uma órfã da allowlist e uma da allowlist cujo lote AINDA
+  existe; a limpeza só pode apagar a órfã da allowlist. Passou de primeira (comportamento já
+  correto: lacuna de cobertura fechada, `conftest.py` intocado). **Mutação verificada** com
+  plugin fora do repositório: filtro de regex afrouxado para `.*` → `2 failed` ("A limpeza
+  APAGOU a tarefa de batchNumber fora da allowlist"); `FILTER NOT EXISTS` removido →
+  `2 failed` ("A limpeza APAGOU a tarefa de um lote que AINDA existe"); sem resíduo no Fuseki.
+
+Suíte: **44 passed, 3 deselected** (os 41 anteriores + 1 de schema sincronizado + 2 da proteção
+da limpeza, que roda uma vez por nó). Mesma ressalva de ambiente: depende de máquina acordada e
+túnel do Besu ativo, que também é pré-condição do teste de schema (lê o RPC).

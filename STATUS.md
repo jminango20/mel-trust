@@ -120,15 +120,17 @@ batchNumber sintético. Detalhes: `CHANGELOG.md`.
 
 ## Suíte de testes BDD (`tests/`)
 
-41 testes passando (`tests/features/*.feature`, `pytest tests/`), zero
-falha, suíte repetível (2 rodadas seguidas, resultado idêntico). São os 22
-cenários anteriores + 4 do outbox de ancoragem (2 cenários ×
-coop-a/coop-b, ver seção acima) + 4 do tratamento de `in_flight`/revert real
-(2 cenários × coop-a/coop-b) + 5 do outbox do laudo no lab
-(`ancoragem_outbox_lab.feature`) + 6 do outbox da VC no certifier
-(`ancoragem_outbox_certifier.feature`), todos testados e confirmados por Juan
-(2026-10-11 e 2026-10-12). **Só passa com a máquina
-acordada e o túnel do Besu ativo** (ver `docs/known-issues.md`).
+44 testes passando (`tests/features/*.feature`, `pytest tests/`), zero
+falha, confirmados por Juan (`44 passed, 3 deselected`, 2026-10-12). São os 41
+anteriores (22 cenários originais + outbox de ancoragem em coop-a/coop-b +
+`in_flight`/revert real + outbox do laudo no lab + outbox da VC no certifier,
+ver seção acima) + 1 de schema sincronizado
+(`schema_sincronizado.feature`: `dataHash` do `honey-validation-shapes` ativo
+on-chain, hoje v2, igual ao hash canônico do `.ttl`) + 2 da proteção da
+limpeza do `tests/conftest.py` (`conftest_allowlist.feature`, 1 cenário ×
+coop-a/coop-b; regex da allowlist e `FILTER NOT EXISTS`, com mutação
+verificada). **Só passa com a máquina acordada e o túnel do Besu ativo** (ver
+`docs/known-issues.md`).
 3 cenários adicionais marcados `@futuro` (deselecionados por padrão via
 `pytest.ini`).
 
