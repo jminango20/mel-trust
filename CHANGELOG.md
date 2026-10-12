@@ -739,3 +739,21 @@ ser replicado nas quatro; extrair para um módulo comum fica como decisão futur
 Suíte: **44 passed, 3 deselected** (os 41 anteriores + 1 de schema sincronizado + 2 da proteção
 da limpeza, que roda uma vez por nó). Mesma ressalva de ambiente: depende de máquina acordada e
 túnel do Besu ativo, que também é pré-condição do teste de schema (lê o RPC).
+
+## Config: default de BESU_RPC_URL em 127.0.0.1 (2026-10-12) — ✅ testado e confirmado
+
+**Confirmado por Juan em 2026-10-12** (leu `44 passed, 3 deselected`, uma rodada).
+
+Os 5 `config.py` (coop-a, coop-b, lab, certifier e verifier-demo) passam a usar
+`http://127.0.0.1:8545` como default de `BESU_RPC_URL` (antes `http://localhost:8545`); a
+variável de ambiente continua sobrescrevendo. Motivo: atraso de resolução de `localhost` no
+Windows (tenta `::1` antes do IPv4), medido na entrada "Suíte depende da máquina acordada e do
+túnel SSH do Besu ativo" de `docs/known-issues.md`: com a porta fechada, 4,1 s com `localhost`
+vs 2,05 s com `127.0.0.1`; com o túnel de pé não há diferença (~0,15 s). Ou seja, o ganho
+aparece quando o RPC está fora do ar. Antes da troca, grep confirmou que o RPC só estava hardcoded nesses
+5 arquivos, fora de `scripts/` e `tests/`. Os serviços foram reiniciados para a mudança valer
+(o `config.py` é lido na importação). Os testes (`RPC_URL` em `test_ancoragem_outbox*.py`) e
+`scripts/` continuam com `localhost`, de propósito.
+
+Suíte: **44 passed, 3 deselected** — uma rodada. Mesma ressalva de ambiente (máquina acordada
+e túnel do Besu ativo).
