@@ -757,3 +757,28 @@ aparece quando o RPC está fora do ar. Antes da troca, grep confirmou que o RPC 
 
 Suíte: **44 passed, 3 deselected** — uma rodada. Mesma ressalva de ambiente (máquina acordada
 e túnel do Besu ativo).
+
+## M8 fechado: escopo (2026-10-12) — executada pelo agente
+
+**O que o M8 cobre:**
+- Ancoragem dos três eventos (lote em coop-a/coop-b, laudo no lab, certificação no certifier)
+  via `TransactionOrchestrator.submitTransaction`, cada um com outbox e `POST /anchoring/retry`
+  (`pending`/`anchored`/`mismatch`, `in_flight`, `waiting_parent`; hash guardado na emissão no
+  certifier, com 409 na reemissão).
+- Verificação on-chain de lote e laudo (`onChainIntegrity` em `GET /verify`, via
+  `AssetRegistry.getAsset()`), e da certificação pelo M7 (OID4VP).
+- Schema `honey-validation-shapes` na versão 2 on-chain, com hash canônico em LF, sincronizado
+  com o `ontology/validation-shapes.ttl` e coberto por teste (`schema_sincronizado.feature`).
+- Suíte de 44 testes (`44 passed, 3 deselected`).
+
+**Fora do escopo, registrado:**
+- Custódia e transferência de posse: ficam para a venda (DvP/2PC); ver o item de roadmap no
+  `CLAUDE.md`.
+- Consulta do schema on-chain pelos nós em tempo de validação (hoje a validação SHACL usa o
+  arquivo local; o schema on-chain só é conferido pelo teste de sincronização).
+- Divulgação seletiva real no M7 (o hash ancorado é o do SD-JWT completo; ver
+  `docs/known-issues.md`).
+- Autenticação entre nós.
+- Agendador de retry (o `POST /anchoring/retry` é manual).
+
+Rótulo "executada pelo agente": sem confirmação do Juan para o fechamento do escopo.
