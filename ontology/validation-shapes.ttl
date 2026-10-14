@@ -82,6 +82,23 @@
         sh:message "Lote precisa ter produtor associado"@pt
     ] .
 
+# [SHACL] Quantidade do lote — adicionada pelo MVP (POST /lote, quantityLiters).
+# O nó converte litros em mililitros inteiros (:quantityMilliliters, xsd:integer).
+# Quantidade é OPCIONAL neste passo (sem sh:minCount): a shape só rejeita valor
+# presente que não seja inteiro >= 1 mL (zero e negativo são regra de negócio,
+# por isso vêm ao SHACL e não são barrados em Python). sh:targetSubjectsOf
+# cobre qualquer tipo de lote (Apis ou nativo).
+:HoneyBatchQuantityShape a sh:NodeShape ;
+    sh:targetSubjectsOf :quantityMilliliters ;
+    sh:property [
+        sh:path :quantityMilliliters ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 1 ;
+        sh:maxCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Quantidade do lote deve ser um inteiro de pelo menos 1 mL"@pt
+    ] .
+
 # [SHACL] Formato de geo:asWKT — adicionada pelo MVP, com autorização do
 # Ivan Bergier ("a ontologia é aberta e adaptável, artefatos semânticos
 # novos podem ser adicionados", ver docs/respostas-ivan.md, pergunta 5).

@@ -57,6 +57,7 @@ import logging
 import re
 import time
 import uuid
+from decimal import Decimal
 
 import requests
 from fastapi import APIRouter, Request
@@ -65,7 +66,7 @@ from jwcrypto.jws import JWS
 from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import FOAF, RDF, XSD
 
-from anchoring import anchor_batch, get_onchain_data_hash, is_known_transaction_error
+from anchoring import DEFAULT_LEGACY_AMOUNT, anchor_batch, get_onchain_data_hash, is_known_transaction_error
 from config import CERTIFIER_URL, FUSEKI_ADMIN_PASSWORD, FUSEKI_ADMIN_USER, FUSEKI_URL
 from hash_utils import deterministic_nt_hash
 from keys import get_issuer_key
@@ -311,6 +312,49 @@ def _pending_batches() -> list[str]:
     return [b["b"]["value"] for b in response.json()["results"]["bindings"]]
 
 
+def _quantity_ml_from_fuseki(batch_number: str) -> int:
+    """`bee:quantityMilliliters` do lote no Fuseki, ou DEFAULT_LEGACY_AMOUNT
+    (1) se o lote não tem quantidade. Decisão: ler do lote (e não guardar na
+    AnchoringTask) porque o lote é a fonte única da quantidade; a tarefa fica
+    só com estado de ancoragem. Nota: a quantidade NÃO entra no CONSTRUCT do
+    hash (que é compartilhado com o verifier-demo), então o hash on-chain não
+    a cobre; o `amount` é conferível só via getAsset."""
+    response = requests.post(
+        f"{FUSEKI_URL}/sparql",
+        data={"query": f"""PREFIX agritrust: <https://w3id.org/agrisemantics/AGRITRUST#>
+        PREFIX : <{BEE}>
+        SELECT ?q WHERE {{ ?l agritrust:batchNumber {_sparql_literal(batch_number)} ; :quantityMilliliters ?q }}
+        LIMIT 1"""},
+        headers={"Accept": "application/sparql-results+json"},
+        auth=(FUSEKI_ADMIN_USER, FUSEKI_ADMIN_PASSWORD),
+        timeout=20,
+    )
+    response.raise_for_status()
+    bindings = response.json()["results"]["bindings"]
+    return int(bindings[0]["q"]["value"]) if bindings else DEFAULT_LEGACY_AMOUNT
+
+
+def _reject_json_constant(name: str):
+    raise ValueError(f"constante JSON não permitida: {name}")
+
+
+_MAX_ML = 10**15  # teto de sanidade (1 bilhão de litros); evita int/uint256 absurdo
+
+
+def _liters_to_milliliters(value) -> int:
+    """quantityLiters (número JSON; Decimal pelo parse_float) -> mililitros
+    inteiros. Mais de 3 casas decimais, não numérico ou fora do teto =>
+    ValueError (vira 400 invalid_request). Sinal NÃO é checado aqui."""
+    if isinstance(value, bool) or not isinstance(value, (int, Decimal)):
+        raise ValueError("quantityLiters deve ser um número (litros).")
+    ml = Decimal(value) * 1000
+    if abs(ml) > _MAX_ML:
+        raise ValueError("quantityLiters fora do limite aceito.")
+    if ml != ml.to_integral_value():
+        raise ValueError("quantityLiters aceita no máximo 3 casas decimais (precisão de 1 mL).")
+    return int(ml)
+
+
 def _nature_id_from_graph(graph: Graph) -> str:
     """productType (local name) do lote = rdf:type que não é DataProducer."""
     for _, _, cls in graph.triples((None, RDF.type, None)):
@@ -349,7 +393,10 @@ def _retry_one(batch_number: str) -> dict:
     if exists:
         return _resolve_existing(batch_number, data_hash, onchain_hash, result)
 
-    success, tx_hash, error = anchor_batch(batch_number, _nature_id_from_graph(graph), data_hash)
+    # MESMO amount do POST /lote: relido do lote no Fuseki (fonte única; nada
+    # duplicado na AnchoringTask). Lote sem quantidade => 1 (legado).
+    amount = _quantity_ml_from_fuseki(batch_number)
+    success, tx_hash, error = anchor_batch(batch_number, _nature_id_from_graph(graph), data_hash, amount)
     if success:
         write_anchoring_task(batch_number, "anchored", tx_hash)
         return {**result, "outcome": "sent", "txHash": tx_hash}
@@ -403,7 +450,9 @@ async def cadastrar_lote(request: Request):
     nem rodar pipeline.py manualmente. Ver docstring do módulo para o
     contrato completo (campos aceitos, gate SHACL, o que fica de fora)."""
     try:
-        body = await request.json()
+        # parse_float=Decimal: a quantidade é convertida a partir do TEXTO do
+        # JSON ("1.8"), nunca de um float binário (1.8 * 1000 != 1800 em float).
+        body = json.loads(await request.body(), parse_float=Decimal, parse_constant=_reject_json_constant)
     except Exception:
         return _error(400, "invalid_request", "Corpo da requisição não é JSON válido.")
 
@@ -433,6 +482,13 @@ async def cadastrar_lote(request: Request):
             "invalid_request",
             "environmentalLicenseNumber requer meliponaryId (licença pertence a um meliponário).",
         )
+
+    quantity_ml = None
+    if body.get("quantityLiters") is not None:
+        try:
+            quantity_ml = _liters_to_milliliters(body["quantityLiters"])
+        except ValueError as exc:
+            return _error(400, "invalid_request", str(exc))
 
     if product_type is not None and not _LOCAL_NAME_RE.match(product_type):
         return _error(
@@ -511,6 +567,11 @@ async def cadastrar_lote(request: Request):
         g.add((lote_uri, BEE.hasFloralOrigin, Literal(str(floral_origin), lang="pt")))
     if production_date:
         g.add((lote_uri, AGRITRUST.productionDate, Literal(str(production_date), datatype=XSD.date)))
+
+    if quantity_ml is not None:
+        # Zero/negativa entra no grafo de propósito: quem rejeita é a
+        # HoneyBatchQuantityShape (regra de negócio é do SHACL).
+        g.add((lote_uri, BEE.quantityMilliliters, Literal(quantity_ml, datatype=XSD.integer)))
 
     if apiary_location is not None:
         if not isinstance(apiary_location, dict) or "lat" not in apiary_location or "lon" not in apiary_location:
@@ -652,7 +713,10 @@ async def cadastrar_lote(request: Request):
             )
         else:
             nature_id = product_type or ""
-            success, tx_hash, anchoring_error = anchor_batch(batch_number, nature_id, data_hash)
+            success, tx_hash, anchoring_error = anchor_batch(
+                batch_number, nature_id, data_hash,
+                quantity_ml if quantity_ml is not None else DEFAULT_LEGACY_AMOUNT,
+            )
             if success:
                 anchoring_status = "anchored"
                 _safe_write_task(batch_number, "anchored", tx_hash)

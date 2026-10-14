@@ -162,9 +162,18 @@ def _get_account_and_contract():
     return account, w3, contract
 
 
-def anchor_batch(batch_number: str, nature_id: str, data_hash: bytes) -> tuple[bool, str | None, str | None]:
+DEFAULT_LEGACY_AMOUNT = 1
+
+
+def anchor_batch(
+    batch_number: str, nature_id: str, data_hash: bytes, amount: int = DEFAULT_LEGACY_AMOUNT
+) -> tuple[bool, str | None, str | None]:
     """Ancora o lote `batch_number` on-chain via
     `TransactionOrchestrator.submitTransaction`.
+
+    `amount` é o `amount` do createAsset: mililitros (`bee:quantityMilliliters`)
+    quando o lote tem quantidade. Sem quantidade vale 1 (LEGADO: valor fixo de
+    antes de a quantidade existir; não significa "1 mL").
 
     `data_hash` é o keccak256 (32 bytes) do MESMO grafo rdflib em memória
     recém-inserido no Fuseki (serializado como N-Triples) — não re-consulta
@@ -194,7 +203,7 @@ def anchor_batch(batch_number: str, nature_id: str, data_hash: bytes) -> tuple[b
         new_asset_id = Web3.keccak(text=batch_number)
 
         operation_data = (
-            1,                    # amount
+            amount,               # amount (mL, ou 1 legado)
             "",                   # idLocal
             [data_hash],          # dataHashes
             "0x0000000000000000000000000000000000000000",  # newOwner = address(0)
