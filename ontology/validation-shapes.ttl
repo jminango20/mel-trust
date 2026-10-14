@@ -154,6 +154,18 @@
         sh:minCount 1 ;
         sh:severity sh:Violation ;
         sh:message "Certificado precisa ter data de emissão (issuanceDate)"@pt
+    ] ;
+    # Descrição (texto livre) com o número ou o hash do certificado — campo
+    # acrescentado a pedido do Ivan Bergier. Predicado: rdfs:comment, e não
+    # dcterms:description, porque é o que a ontologia do MVP já usa
+    # (bee-extension.ttl: 78 usos de rdfs:comment, nenhum de dcterms:description;
+    # este arquivo não usa nenhum dos dois).
+    sh:property [
+        sh:path rdfs:comment ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Certificado precisa de uma descrição com o número ou o hash do certificado"@pt
     ] .
 
 # [SHACL] Aviso para Umidade em Mel Nativo (Portaria 1.439/2025)
