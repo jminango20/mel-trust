@@ -30,3 +30,9 @@ __pycache__/
 fixtures/producer-keys/*.pem
 
 docs/
+# Node (contracts/venda-dados)
+node_modules/
+
+contracts/venda-dados/artifacts/
+contracts/venda-dados/cache/
+contracts/venda-dados/types/
