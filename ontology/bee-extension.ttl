@@ -939,6 +939,27 @@ agritrust:hasUnit
     rdfs:label "Principais Achados"@pt ;
     rdfs:comment "Resumo dos resultados relevantes da publicação científica."@pt .
 
+:priceUnits
+    a owl:DatatypeProperty ;
+    rdfs:domain agritrust:DataContract ;
+    rdfs:range xsd:integer ;
+    rdfs:label "Preço em Unidades Mínimas"@pt ;
+    rdfs:comment "Preço do contrato de dados, inteiro, na menor unidade do token de pagamento (USDT de teste, 6 casas decimais)."@pt .
+
+:contractRef
+    a owl:DatatypeProperty ;
+    rdfs:domain agritrust:DataContract ;
+    rdfs:range xsd:string ;
+    rdfs:label "Referência do Contrato"@pt ;
+    rdfs:comment "bytes32 em hexadecimal (0x + 64): keccak256 do JSON canônico dos termos. É a ref usada no VendaDados."@pt .
+
+:buyerWallet
+    a owl:DatatypeProperty ;
+    rdfs:domain agritrust:DataContract ;
+    rdfs:range xsd:string ;
+    rdfs:label "Carteira do Comprador"@pt ;
+    rdfs:comment "Endereço da carteira do comprador (EIP-55), que fará o depósito do pagamento."@pt .
+
 # =============================================================================
 # Fim da Ontologia AgriTrust - Extensão Apícola v1.0
 # =============================================================================

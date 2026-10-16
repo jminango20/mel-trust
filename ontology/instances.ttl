@@ -559,6 +559,7 @@
     rdfs:label "Contrato de Dados - Exportação Mel Silvestre para UE"@pt ;
     agritrust:validFrom "2026-04-15T00:00:00Z"^^xsd:dateTime ;
     agritrust:validUntil "2027-04-15T00:00:00Z"^^xsd:dateTime ;
+    :priceUnits 2500000 ;  # ilustrativo: 2,50 USDT de teste (6 casas); valores de exemplo do mel-trust, não definidos pelo Ivan
     agritrust:purpose "Compliance EUDR e Certificação Orgânica para Importação Europeia"@pt ;
     agritrust:hasPolicyAssignee :Importador_Alemao_Mel ;
     agritrust:coversAsset :Lote_Mel_Silvestre_2026_042 ;
@@ -599,6 +600,7 @@
     rdfs:label "Contrato de Dados - Pesquisa Científica Meliponídeos"@pt ;
     agritrust:validFrom "2026-04-20T00:00:00Z"^^xsd:dateTime ;
     agritrust:validUntil "2028-04-20T00:00:00Z"^^xsd:dateTime ;
+    :priceUnits 1000000 ;  # ilustrativo: 1,00 USDT de teste (6 casas); valores de exemplo do mel-trust, não definidos pelo Ivan
     agritrust:purpose "Estudo Científico de Caracterização de Méis Nativos do Cerrado"@pt ;
     agritrust:hasPolicyAssignee :Universidade_Brasilia ;
     agritrust:coversAsset :Lote_Mel_Jatai_2026_015 ;

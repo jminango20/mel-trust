@@ -232,14 +232,26 @@
     ] .
 
 # [SHACL] Validação de Contrato de Dados
+# Campos de preço e carteira acrescentados pelo mel-trust, ontologia aberta
+# (:priceUnits, :buyerWallet; :contractRef não é validado aqui, é derivado pelo nó).
 :DataContractShape a sh:NodeShape ;
     sh:targetClass agritrust:DataContract ;
     sh:property [
         sh:path agritrust:validFrom ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
+        sh:lessThan agritrust:validUntil ;
         sh:severity sh:Violation ;
-        sh:message "Contrato de dados deve ter data de início"@pt
+        sh:message "Contrato de dados deve ter data de início, estritamente anterior à data de término"@pt
+    ] ;
+    sh:property [
+        sh:path :priceUnits ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Contrato de dados deve ter preço inteiro (priceUnits) maior ou igual a 1"@pt
     ] ;
     sh:property [
         sh:path agritrust:validUntil ;

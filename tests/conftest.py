@@ -85,8 +85,26 @@ WHERE {
 """ % _TEST_BATCH_PATTERN
 
 
+# coop-a: DataContract de consumidor sintético (test_data_contract.py), allowlist ANCORADA
+# no rdfs:label do assignee. Apaga o contrato e o recurso do consumidor.
+_TEST_CONSUMER_PATTERN = r"^ConsumidorTeste-[0-9a-f]{12}$"
+_TEST_DATA_CONTRACTS_UPDATE = """
+PREFIX agritrust: <https://w3id.org/agrisemantics/AGRITRUST#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+DELETE { ?c ?p ?o . ?a ?ap ?ao }
+WHERE {
+  ?c a agritrust:DataContract ; agritrust:hasPolicyAssignee ?a .
+  ?a rdfs:label ?n .
+  FILTER REGEX(STR(?n), "%s")
+  ?c ?p ?o .
+  ?a ?ap ?ao .
+}
+""" % _TEST_CONSUMER_PATTERN
+
+
 def _purge_orphan_tasks():
     for node, default_url, update in (
+        ("coop-a", "http://127.0.0.1:3030/coop-a", _TEST_DATA_CONTRACTS_UPDATE),
         ("coop-a", "http://127.0.0.1:3030/coop-a", _ORPHAN_TASKS_UPDATE),
         ("coop-a", "http://127.0.0.1:3030/coop-a", _ORPHAN_DELIVERY_TASKS_UPDATE),
         ("coop-b", "http://127.0.0.1:3031/coop-b", _ORPHAN_TASKS_UPDATE),
