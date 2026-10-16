@@ -36,3 +36,7 @@ node_modules/
 contracts/venda-dados/artifacts/
 contracts/venda-dados/cache/
 contracts/venda-dados/types/
+
+# Carteiras custodiais de produtor (VendaDados), geradas pelo coop-a em coop-a/keys/producers/.
+# Chave privada: nunca versionar (so redes de TESTE por enquanto).
+coop-a/keys/producers/

@@ -9,6 +9,7 @@ amount=1 fixo. Contrato proposto: `quantityLiters` (litros, <= 3 casas) ->
 Testado contra coop-a. getAsset lido direto do AssetRegistry (mesmo ABI de
 test_ancoragem_lote_produtor_reaproveitado.py).
 """
+import hashlib
 import sys
 import uuid
 from pathlib import Path
@@ -26,7 +27,7 @@ scenarios("../features/lote_quantidade.feature")
 
 COOP_A_URL = "http://localhost:8001"
 PRODUCER_NAME = "João da Silva"
-PRODUCER_DID = "did:key:z6MkhssBusXfHjvnvquNJjwQaVYTGsvgY9otdhLhKyCaXJT9"
+PRODUCERS_KEY_DIR = REPO_ROOT / "coop-a" / "keys" / "producers"
 
 RPC_URL = "http://127.0.0.1:8545"
 CHANNEL_NAME = "mel-trust"
@@ -100,9 +101,14 @@ def _limpa_lote_sintetico(context):
       ?lote agritrust:batchNumber "{context['batch_number']}" .
       ?lote ?p ?o .
     }}"""})
+    _fuseki_post("update", {"update": f"""{_PREFIX}
+    DELETE WHERE {{ ?t :deliveryBatch "{context['batch_number']}" . ?t ?p ?o }}"""})
     if "producer_did_planted" in context:
         _fuseki_post("update", {"update": f"""{_PREFIX}
         DELETE WHERE {{ ?p agritrust:hasDID "{context['producer_did_planted']}" . ?p ?x ?y }}"""})
+        # carteira custodial criada pelo coop-a para este DID sintético (se houve entrega)
+        (PRODUCERS_KEY_DIR / (hashlib.sha256(context["producer_did_planted"].encode()).hexdigest() + ".key")
+         ).unlink(missing_ok=True)
 
 
 def _lote_existe(batch_number: str) -> bool:
@@ -118,12 +124,14 @@ def _lote_existe(batch_number: str) -> bool:
 def novo_lote_com_quantidade(context, litros):
     suffix = uuid.uuid4().hex[:8]
     context["batch_number"] = f"MS-2026-QTD-{suffix}"
+    # DID sintético novo por execução: a carteira custodial criada pelo coop-a é apagada na limpeza.
+    context["producer_did_planted"] = f"did:key:zTesteQtd{uuid.uuid4().hex}"
     # Número JSON (float), como um cliente real mandaria — não string.
     context["body"] = {
         "batchNumber": context["batch_number"],
         "productType": "HoneyApis",
         "producerName": PRODUCER_NAME,
-        "producerDID": PRODUCER_DID,
+        "producerDID": context["producer_did_planted"],
         "quantityLiters": float(litros),
     }
 

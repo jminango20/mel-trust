@@ -32,6 +32,7 @@ from fastapi import FastAPI
 
 from config import BASE_URL, DID_WEB, NODE_NAME
 from credential_endpoint import router as credential_router
+from delivery import router as delivery_router
 from did_endpoint import router as did_router
 from lote_endpoint import router as lote_router
 from nonce_endpoint import router as nonce_router
@@ -43,6 +44,7 @@ app.include_router(nonce_router)
 app.include_router(credential_router)
 app.include_router(did_router)
 app.include_router(lote_router)
+app.include_router(delivery_router)
 
 
 @app.get("/.well-known/openid-credential-issuer")

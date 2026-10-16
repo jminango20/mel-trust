@@ -68,6 +68,7 @@ from rdflib.namespace import FOAF, RDF, XSD
 
 from anchoring import DEFAULT_LEGACY_AMOUNT, anchor_batch, get_onchain_data_hash, is_known_transaction_error
 from config import CERTIFIER_URL, FUSEKI_ADMIN_PASSWORD, FUSEKI_ADMIN_USER, FUSEKI_URL
+from delivery import deliver_on_post_lote
 from hash_utils import deterministic_nt_hash
 from keys import get_issuer_key
 from pre_auth_codes import generate_for_batch, reissue_for_batch
@@ -730,6 +731,10 @@ async def cadastrar_lote(request: Request):
         # productType também ausente) — não tenta ancorar.
         logger.info("POST /lote: lote sem batchNumber, ancoragem on-chain pulada (anchoringStatus=anchoring_skipped).")
 
+    # --- 6. Entrega no VendaDados (segunda rede) — melhor esforço, independente da
+    # Besu: não altera anchoringStatus. Ver delivery.py. ---
+    delivery_fields = deliver_on_post_lote(batch_number, producer_did, quantity_ml)
+
     response_body = {
         "status": "inserted",
         "batchNumber": batch_number,
@@ -737,6 +742,7 @@ async def cadastrar_lote(request: Request):
         "producer": str(producer_uri) if producer_uri is not None else None,
         "pre_authorized_code": pre_authorized_code,
         "anchoringStatus": anchoring_status,
+        **delivery_fields,
     }
     if tx_hash is not None:
         response_body["txHash"] = tx_hash

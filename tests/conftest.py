@@ -47,7 +47,7 @@ _TEST_BATCH_PATTERN = (
     r"^(MN-2026-015|MS-2026-042|MS-2026-042-LAB-REJEITADO"
     r"|MS-2026-042-REEMISSAO-.+|MEL-SILVESTRE-.+"
     r"|MN-2026-(MELIP|MELIP-SEMLIC|REUSE1|REUSE2)-.+"
-    r"|MS-2026-(ANCCERT|ANCLAUDO|ANCORA|QTD|APRESVP|HOLDERVC|VALIDAVP|VERIFYOC|OUTBOX[1-5]|LABOUT[1-6]|CERTOUT[1-6])-.+)$"
+    r"|MS-2026-(ANCCERT|ANCLAUDO|ANCORA|QTD|ENTREGA|APRESVP|HOLDERVC|VALIDAVP|VERIFYOC|OUTBOX[1-5]|LABOUT[1-6]|CERTOUT[1-6])-.+)$"
 )
 # LAB: tarefas da allowlist, órfãs ou não (ver docstring do módulo).
 _ALLOWLISTED_TASKS_UPDATE = """
@@ -71,9 +71,24 @@ WHERE {
 """ % _TEST_BATCH_PATTERN
 
 
+# coop-a: DeliveryTask (entrega no VendaDados) órfã da allowlist. Mesma regra da
+# AnchoringTask órfã, mas por :deliveryBatch.
+_ORPHAN_DELIVERY_TASKS_UPDATE = """
+PREFIX : <https://w3id.org/agrisemantics/AGRITRUST/bee-extension#>
+PREFIX agritrust: <https://w3id.org/agrisemantics/AGRITRUST#>
+DELETE { ?t ?p ?o }
+WHERE {
+  ?t :deliveryBatch ?b ; ?p ?o .
+  FILTER NOT EXISTS { ?lote agritrust:batchNumber ?b }
+  FILTER REGEX(STR(?b), "%s")
+}
+""" % _TEST_BATCH_PATTERN
+
+
 def _purge_orphan_tasks():
     for node, default_url, update in (
         ("coop-a", "http://127.0.0.1:3030/coop-a", _ORPHAN_TASKS_UPDATE),
+        ("coop-a", "http://127.0.0.1:3030/coop-a", _ORPHAN_DELIVERY_TASKS_UPDATE),
         ("coop-b", "http://127.0.0.1:3031/coop-b", _ORPHAN_TASKS_UPDATE),
         ("lab", "http://127.0.0.1:3033/lab", _ALLOWLISTED_TASKS_UPDATE),
         ("certifier", "http://127.0.0.1:3032/certifier", _ALLOWLISTED_TASKS_UPDATE),
@@ -105,14 +120,18 @@ _RPC_URL = "http://127.0.0.1:8545"
 
 
 @pytest.fixture(autouse=True)
-def _rpc_tunnel_alive():
+def _rpc_tunnel_alive(request):
     """Se o RPC do Besu (túnel SSH) não responde, ENCERRA a suíte inteira
     (`pytest.exit`) na primeira falha, com mensagem clara — sem arrastar os
     demais testes (cada um falharia igual, ~2-5s de espera por teste) e sem
     deixar nenhum pendurado ou falhando com um "unavailable" genérico lá na
-    frente. Roda antes de CADA teste: se o túnel cair no meio da suíte (ou a
+    frente. Cenários marcados `@sem_besu` (não usam a Besu) dispensam o check; os
+    demais seguem com o preflight completo. Roda antes de CADA teste: se o túnel cair no meio da suíte (ou a
     máquina suspender), o próximo teste aponta a causa. Custo com o túnel de
     pé: ~0,15s por teste."""
+    if request.node.get_closest_marker("sem_besu"):
+        yield
+        return
     try:
         r = requests.post(
             _RPC_URL,
