@@ -60,6 +60,7 @@ FUSEKI_URL = _coop_a_env.get("FUSEKI_URL", "http://127.0.0.1:3030/coop-a")
 FUSEKI_PASSWORD = _coop_a_env.get("FUSEKI_ADMIN_PASSWORD")
 
 _VALID_FROM = datetime(2026, 11, 1, tzinfo=timezone.utc)
+DATE_FORMAT_MSG = "validFrom e validUntil devem ser ISO 8601 com hora e fuso (Z ou ±hh:mm), ex. 2026-11-01T00:00:00Z"
 
 
 def _iso(dt: datetime) -> str:
@@ -125,6 +126,23 @@ def _altera_campo(context, campo, valor):
             raise AssertionError(f"valor desconhecido para validUntil: {valor!r}")
     else:
         raise AssertionError(f"campo desconhecido: {campo!r}")
+
+
+@given(parsers.parse('o campo "{campo}" com o texto "{valor}"'))
+def _campo_texto(context, campo, valor):
+    assert campo in ("validFrom", "validUntil"), campo
+    context["terms"][campo] = valor
+
+
+@then("a resposta é 400 com error invalid_request e a mensagem fixa do formato de data")
+def _400_formato_data(context):
+    resp = context["response"]
+    assert resp.status_code == 400, f"esperado 400, veio {resp.status_code}: {resp.text}"
+    body = resp.json()
+    assert body.get("error") == "invalid_request", f"esperado error=invalid_request, veio {body}"
+    # Mensagem FIXA (a mesma para qualquer valor inválido; o exemplo 2026-11-01T00:00:00Z faz parte
+    # do texto, por isso a checagem é igualdade exata e não "não contém o valor enviado").
+    assert body.get("error_description") == DATE_FORMAT_MSG, f"mensagem diferente da fixa: {body}"
 
 
 @given("o coop-a já recebeu POST /data-contract com esses termos")

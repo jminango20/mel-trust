@@ -65,7 +65,7 @@ _ABI = [
 
 # --- Configuração (lida a cada chamada: o node/deploy pode mudar sem reiniciar o nó) ---
 
-def _config() -> tuple[str, int, str | None]:
+def venda_dados_config() -> tuple[str, int, str | None]:
     rpc = os.environ.get("VENDA_DADOS_RPC_URL", "http://127.0.0.1:8546")
     chain_id = int(os.environ.get("VENDA_DADOS_CHAIN_ID", "31337"))
     address = os.environ.get("VENDA_DADOS_ADDRESS")
@@ -75,7 +75,7 @@ def _config() -> tuple[str, int, str | None]:
 
 
 def _contract():
-    rpc, chain_id, address = _config()
+    rpc, chain_id, address = venda_dados_config()
     if not address:
         raise RuntimeError("VENDA_DADOS_ADDRESS não configurado (nem deployments/local.json)")
     w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))

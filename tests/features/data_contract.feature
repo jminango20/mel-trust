@@ -36,3 +36,18 @@ Funcionalidade: Contrato de Dados no coop-a (POST /data-contract)
     Quando o coop-a recebe POST /data-contract com esses termos
     Então a resposta é 409 com o contractRef do primeiro POST
     E o Fuseki do coop-a tem exatamente 1 DataContract desse consumidor
+
+  @sem_besu
+  Esquema do Cenário: Data sem hora ou sem fuso é rejeitada com invalid_request
+    Dado os termos de um contrato de dados válido com um consumidor sintético
+    E o campo "<campo>" com o texto "<valor>"
+    Quando o coop-a recebe POST /data-contract com esses termos
+    Então a resposta é 400 com error invalid_request e a mensagem fixa do formato de data
+    E o Fuseki do coop-a não tem DataContract desse consumidor
+
+    Exemplos:
+      | campo      | valor               |
+      | validFrom  | 2026-11-01          |
+      | validFrom  | 2026-11-01T00:00:00 |
+      | validUntil | 2027-11-01          |
+      | validUntil | 2027-11-01T00:00:00 |

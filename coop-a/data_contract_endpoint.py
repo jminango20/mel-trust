@@ -19,11 +19,32 @@ EIP-55, datas parseáveis -> 400 invalid_request). As REGRAS DE NEGÓCIO (preço
 
 Respostas: 201 {"contractRef"}; 409 {"error": "already_exists", "contractRef"}.
 Ordem: forma -> contractRef -> já existe? (409) -> SHACL (400) -> insere (201).
+
+Datas: `validFrom`/`validUntil` devem ser ISO 8601 COM hora e fuso (`Z` ou `±hh:mm`). Data sem
+hora ou sem fuso -> 400 invalid_request com mensagem fixa (DATE_FORMAT_MSG). Motivo: a janela
+é comparada com o timestamp (UTC) do bloco do depósito; sem fuso a data seria ambígua. (O
+contractRef continua hasheando a string recebida; o Fuseki guarda o xsd:dateTime normalizado
+pelo rdflib, ex. `Z` vira `+00:00`.)
+
+GET /data-contract/{contractRef}/payment — status do pagamento, SÓ LEITURA, SEM CHAVE: lê
+`depositos(ref)` do VendaDados por eth_call (mesma configuração VENDA_DADOS_* de delivery.py)
+e os termos (buyerWallet, priceUnits, validFrom, validUntil) do Fuseki. 200
+{"contractRef", "status"}; 404 {"error": "not_found"} (nenhum contrato com essa ref, ou ref
+mal formada); 503 {"error": "service_unavailable"} com mensagem FIXA (Fuseki ou node fora do ar;
+o texto da exceção só vai ao log). Precedência do status (`payment_status`):
+  estado 0 -> not_paid; comprador/valor != buyerWallet/priceUnits -> mismatch;
+  estado 2 -> released; estado 3 -> refunded; estado 1 fora da janela -> outside_window;
+  estado 1 dentro -> paid.
+Janela: validFrom <= depositadoEm <= validUntil (inclusivos), tudo em UTC: validFrom/validUntil
+(com o fuso guardado) são convertidos com astimezone(UTC) e comparados com o timestamp do BLOCO
+do depósito, não com a hora da leitura. Data guardada sem fuso (só dado legado, o POST já não
+a aceita) é lida como UTC.
 """
 import hashlib
 import json
 import logging
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 
 import requests
 from fastapi import APIRouter, Request
@@ -32,6 +53,7 @@ from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import RDF, RDFS, XSD
 from web3 import Web3
 
+import delivery
 from config import FUSEKI_ADMIN_PASSWORD, FUSEKI_ADMIN_USER, FUSEKI_URL
 from shacl_pipeline import extract_violations, format_violations, insert_into_fuseki, run_shacl
 
@@ -44,6 +66,18 @@ AGRITRUST = Namespace("https://w3id.org/agrisemantics/AGRITRUST#")
 
 _TERM_KEYS = ("consumer", "purpose", "priceUnits", "buyerWallet", "validFrom", "validUntil")
 _STRING_KEYS = ("consumer", "purpose", "validFrom", "validUntil")
+
+# ISO 8601 com hora E fuso (Z ou ±hh:mm). Mensagem FIXA: diz o formato aceito, sem eco do valor.
+_DATETIME_WITH_ZONE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$")
+DATE_FORMAT_MSG = "validFrom e validUntil devem ser ISO 8601 com hora e fuso (Z ou ±hh:mm), ex. 2026-11-01T00:00:00Z"
+
+_CONTRACT_REF_RE = re.compile(r"^0x[0-9a-f]{64}$")
+SERVICE_UNAVAILABLE_MSG = "leitura do pagamento indisponível no momento; tente novamente mais tarde"
+_ESTADO_NENHUM, _ESTADO_DEPOSITADO, _ESTADO_LIBERADO, _ESTADO_REEMBOLSADO = 0, 1, 2, 3
+_DEPOSITOS_ABI = [{"type": "function", "name": "depositos", "stateMutability": "view",
+                   "inputs": [{"name": "", "type": "bytes32"}],
+                   "outputs": [{"name": "comprador", "type": "address"}, {"name": "valor", "type": "uint256"},
+                               {"name": "depositadoEm", "type": "uint64"}, {"name": "estado", "type": "uint8"}]}]
 
 
 def _error(status_code: int, error: str, description: str, extra: dict | None = None) -> JSONResponse:
@@ -66,10 +100,12 @@ def _check_form(terms: dict) -> str | None:
         return "buyerWallet ausente ou fora do formato EIP-55 (endereço com checksum)"
     for key in ("validFrom", "validUntil"):
         if key in terms:
+            if not _DATETIME_WITH_ZONE_RE.match(terms[key]):
+                return DATE_FORMAT_MSG
             try:
                 datetime.fromisoformat(terms[key].replace("Z", "+00:00"))
             except ValueError:
-                return f"{key} não é uma data ISO-8601"
+                return DATE_FORMAT_MSG
     return None
 
 
@@ -145,3 +181,77 @@ async def post_data_contract(request: Request):
         logger.error("POST /data-contract: insert no Fuseki falhou: %s", exc)
         return _error(502, "server_error", "falha ao gravar no Fuseki")
     return JSONResponse(status_code=201, content={"contractRef": ref})
+
+
+# --- Leitura do pagamento ---------------------------------------------------------------
+
+def _to_utc(value: str) -> datetime:
+    """xsd:dateTime guardado no Fuseki -> datetime em UTC. Sem fuso (legado) = UTC.
+    Ex.: 2026-11-01T00:00:00+02:00 -> 2026-10-31T22:00:00+00:00."""
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+
+def payment_status(estado: int, comprador: str, valor: int, deposited_at: int, terms: dict) -> str:
+    """Precedência do status (ver docstring do módulo). `terms` vem do Fuseki."""
+    if estado == _ESTADO_NENHUM:
+        return "not_paid"
+    if comprador.lower() != terms["buyerWallet"].lower() or valor != terms["priceUnits"]:
+        return "mismatch"
+    if estado == _ESTADO_LIBERADO:
+        return "released"
+    if estado == _ESTADO_REEMBOLSADO:
+        return "refunded"
+    deposited = datetime.fromtimestamp(deposited_at, tz=timezone.utc)
+    if not (_to_utc(terms["validFrom"]) <= deposited <= _to_utc(terms["validUntil"])):
+        return "outside_window"
+    return "paid"
+
+
+def _load_terms(ref: str) -> dict | None:
+    query = (f'PREFIX : <{BEE}>\nPREFIX agritrust: <{AGRITRUST}>\n'
+             f'SELECT ?w ?p ?f ?u WHERE {{ ?c :contractRef "{ref}" ; :buyerWallet ?w ; :priceUnits ?p ; '
+             f'agritrust:validFrom ?f ; agritrust:validUntil ?u }}')
+    response = requests.post(
+        f"{FUSEKI_URL}/query", data={"query": query}, headers={"Accept": "application/sparql-results+json"},
+        auth=(FUSEKI_ADMIN_USER, FUSEKI_ADMIN_PASSWORD), timeout=15,
+    )
+    response.raise_for_status()
+    rows = response.json()["results"]["bindings"]
+    if not rows:
+        return None
+    r = rows[0]
+    return {"buyerWallet": r["w"]["value"], "priceUnits": int(r["p"]["value"]),
+            "validFrom": r["f"]["value"], "validUntil": r["u"]["value"]}
+
+
+def _read_deposit(ref: str) -> tuple[str, int, int, int]:
+    """eth_call depositos(ref). SEM chave. Levanta em node/contrato indisponível."""
+    rpc, chain_id, address = delivery.venda_dados_config()
+    if not address:
+        raise RuntimeError("VendaDados sem endereço configurado")
+    w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))
+    if w3.eth.chain_id != chain_id:
+        raise RuntimeError(f"chainId {w3.eth.chain_id} em {rpc}, esperado {chain_id}")
+    contract = w3.eth.contract(address=Web3.to_checksum_address(address), abi=_DEPOSITOS_ABI)
+    comprador, valor, depositado_em, estado = contract.functions.depositos(bytes.fromhex(ref[2:])).call()
+    return comprador, valor, depositado_em, estado
+
+
+@router.get("/data-contract/{contract_ref}/payment")
+def get_data_contract_payment(contract_ref: str):
+    if not _CONTRACT_REF_RE.match(contract_ref):
+        return _error(404, "not_found", "contrato não encontrado")
+    try:
+        terms = _load_terms(contract_ref)
+    except (requests.RequestException, ValueError, KeyError) as exc:
+        logger.error("GET /data-contract/%s/payment: leitura do Fuseki falhou: %s", contract_ref, exc)
+        return _error(503, "service_unavailable", SERVICE_UNAVAILABLE_MSG)
+    if terms is None:
+        return _error(404, "not_found", "contrato não encontrado")
+    try:
+        comprador, valor, depositado_em, estado = _read_deposit(contract_ref)
+    except Exception as exc:  # noqa: BLE001 - node parado, RPC lento, revert, chainId errado: tudo vira 503 fixo
+        logger.error("GET /data-contract/%s/payment: leitura do VendaDados falhou: %s", contract_ref, exc)
+        return _error(503, "service_unavailable", SERVICE_UNAVAILABLE_MSG)
+    return {"contractRef": contract_ref, "status": payment_status(estado, comprador, valor, depositado_em, terms)}
