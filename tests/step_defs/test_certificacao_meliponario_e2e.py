@@ -26,9 +26,9 @@ from scripts.test_credential_flow import GRANT_TYPE, b64url_json, build_proof_jw
 
 scenarios("../features/certificacao_meliponario_e2e.feature")
 
-COOP_B_URL = "http://localhost:8002"
-LAB_URL = "http://localhost:8005"
-CERTIFIER_URL = "http://localhost:8003"
+COOP_B_URL = "http://127.0.0.1:8002"
+LAB_URL = "http://127.0.0.1:8005"
+CERTIFIER_URL = "http://127.0.0.1:8003"
 
 PRODUCER_NAME = "João"
 PRODUCER_DID = "did:key:z6Mkkc7de5XEc1sUGBYxHo8yLWM9yTsnorqCNK7HnE8SZnVT"

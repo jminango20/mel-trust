@@ -40,7 +40,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 scenarios("../features/data_contract_pagamento.feature")
 
-COOP_A_URL = "http://localhost:8001"
+COOP_A_URL = "http://127.0.0.1:8001"
 VENDA_DIR = REPO_ROOT / "contracts" / "venda-dados"
 DEPLOY_JSON = VENDA_DIR / "deployments" / "local.json"
 COOP_KEY_PATH = REPO_ROOT / "coop-a" / "keys" / "coop-a-besu.key"

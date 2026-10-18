@@ -25,7 +25,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 scenarios("../features/lote_quantidade.feature")
 
-COOP_A_URL = "http://localhost:8001"
+COOP_A_URL = "http://127.0.0.1:8001"
 PRODUCER_NAME = "João da Silva"
 PRODUCERS_KEY_DIR = REPO_ROOT / "coop-a" / "keys" / "producers"
 

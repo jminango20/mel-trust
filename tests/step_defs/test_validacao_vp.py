@@ -27,9 +27,12 @@ sys.path.insert(0, str(REPO_ROOT))
 
 scenarios("../features/validacao_vp.feature")
 
-COOP_A_URL = "http://localhost:8001"
-LAB_URL = "http://localhost:8005"
-VERIFIER_URL = "http://localhost:8004"
+COOP_A_URL = "http://127.0.0.1:8001"
+LAB_URL = "http://127.0.0.1:8005"
+VERIFIER_URL = "http://127.0.0.1:8004"
+# audience da VP: entra no `aud` do KB-JWT (dentro da credencial apresentada), NAO e URL de conexao:
+# fica `localhost` (o valor de antes da troca de URLs de conexao por 127.0.0.1).
+VERIFIER_AUDIENCE = "http://localhost:8004"
 PRODUCER_NAME = "João da Silva"
 PRODUCER_DID = "did:key:z6MkhssBusXfHjvnvquNJjwQaVYTGsvgY9otdhLhKyCaXJT9"
 
@@ -144,7 +147,7 @@ def coop_a_apresentou_vp(context):
 
     present_resp = requests.post(
         f"{COOP_A_URL}/present/{batch_number}",
-        json={"nonce": nonce, "audience": VERIFIER_URL},
+        json={"nonce": nonce, "audience": VERIFIER_AUDIENCE},
         timeout=20,
     )
     assert present_resp.status_code == 200, (

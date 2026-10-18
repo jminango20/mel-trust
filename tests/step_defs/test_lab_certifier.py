@@ -32,8 +32,8 @@ from scripts.test_credential_flow import GRANT_TYPE, b64url_json, build_proof_jw
 
 scenarios("../features/lab_certifier.feature")
 
-LAB_URL = "http://localhost:8005"
-CERTIFIER_URL = "http://localhost:8003"
+LAB_URL = "http://127.0.0.1:8005"
+CERTIFIER_URL = "http://127.0.0.1:8003"
 
 # Lidos do PRÓPRIO certifier/.env (fonte real que o config.py do certifier
 # usa) — não hardcoded, não reimplementado com valor diferente.
@@ -121,7 +121,7 @@ def lote_existe_no_coop_a(context):
     # Fato de contexto (narrativa), não uma ação — já verificado em
     # tests/step_defs/test_rastreabilidade.py. Confere de leve que o coop-a
     # está no ar, sem duplicar aquele teste.
-    resp = requests.get("http://localhost:8001/.well-known/openid-credential-issuer", timeout=10)
+    resp = requests.get("http://127.0.0.1:8001/.well-known/openid-credential-issuer", timeout=10)
     assert resp.status_code == 200
     context["batch_number"] = BATCH_VALID
 

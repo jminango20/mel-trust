@@ -22,7 +22,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 scenarios("../features/presentation_request.feature")
 
-VERIFIER_URL = "http://localhost:8004"
+VERIFIER_URL = "http://127.0.0.1:8004"
 BATCH_NUMBER = "MS-2026-042"
 
 

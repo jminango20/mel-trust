@@ -48,7 +48,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 scenarios("../features/data_contract.feature")
 
-COOP_A_URL = "http://localhost:8001"
+COOP_A_URL = "http://127.0.0.1:8001"
 _PREFIX = (
     "PREFIX : <https://w3id.org/agrisemantics/AGRITRUST/bee-extension#>\n"
     "PREFIX agritrust: <https://w3id.org/agrisemantics/AGRITRUST#>\n"

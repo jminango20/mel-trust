@@ -36,8 +36,8 @@ from scripts.test_credential_flow import GRANT_TYPE, b64url_json, build_proof_jw
 
 scenarios("../features/rastreabilidade_mel.feature")
 
-COOP_A_URL = "http://localhost:8001"
-VERIFIER_URL = "http://localhost:8004"
+COOP_A_URL = "http://127.0.0.1:8001"
+VERIFIER_URL = "http://127.0.0.1:8004"
 
 BATCH_NUMBER_VALID = "MS-2026-042"
 PRODUCER_NAME = "João da Silva"

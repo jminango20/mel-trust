@@ -55,9 +55,9 @@ from load_node_module import load_node_module  # noqa: E402
 
 scenarios("../features/ancoragem_outbox_lab.feature")
 
-COOP_A_URL = "http://localhost:8001"
-LAB_URL = "http://localhost:8005"
-RPC_URL = "http://localhost:8545"
+COOP_A_URL = "http://127.0.0.1:8001"
+LAB_URL = "http://127.0.0.1:8005"
+RPC_URL = "http://127.0.0.1:8545"
 PRODUCER_NAME = "João da Silva"
 PRODUCER_DID = "did:key:z6MkhssBusXfHjvnvquNJjwQaVYTGsvgY9otdhLhKyCaXJT9"
 BEE_NS = "https://w3id.org/agrisemantics/AGRITRUST/bee-extension#"

@@ -36,9 +36,12 @@ sys.path.insert(0, str(REPO_ROOT))
 
 scenarios("../features/apresentacao_vp.feature")
 
-COOP_A_URL = "http://localhost:8001"
-LAB_URL = "http://localhost:8005"
-VERIFIER_URL = "http://localhost:8004"
+COOP_A_URL = "http://127.0.0.1:8001"
+LAB_URL = "http://127.0.0.1:8005"
+VERIFIER_URL = "http://127.0.0.1:8004"
+# audience da VP: entra no `aud` do KB-JWT (dentro da credencial apresentada), NAO e URL de conexao:
+# fica `localhost` (o valor de antes da troca de URLs de conexao por 127.0.0.1).
+VERIFIER_AUDIENCE = "http://localhost:8004"
 PRODUCER_NAME = "João da Silva"
 PRODUCER_DID = "did:key:z6MkhssBusXfHjvnvquNJjwQaVYTGsvgY9otdhLhKyCaXJT9"
 
@@ -154,7 +157,7 @@ def verifier_gerou_presentation_request(context):
 
     context["batch_number"] = batch_number
     context["nonce"] = presentation_body["nonce"]
-    context["verifier_audience"] = VERIFIER_URL
+    context["verifier_audience"] = VERIFIER_AUDIENCE
 
 
 @when("a coop-a chama POST /present/{batch_number} com esse nonce")

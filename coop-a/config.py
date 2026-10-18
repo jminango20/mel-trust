@@ -102,8 +102,9 @@ FUSEKI_ADMIN_PASSWORD = os.environ.get("FUSEKI_ADMIN_PASSWORD")
 # processos uvicorn diretos no host (não em containers Docker próprios —
 # só o Fuseki de cada um roda em container), então coop-a chamando
 # certifier é host->host, mesma perspectiva de rede dos scripts de teste
-# (scripts/test_credential_flow.py).
-CERTIFIER_URL = os.environ.get("CERTIFIER_URL", "http://localhost:8003")
+# (scripts/test_credential_flow.py). `127.0.0.1`, não `localhost`: `localhost` resolve
+# `::1` primeiro e o uvicorn só escuta em IPv4 (~2,05 s por chamada no Windows).
+CERTIFIER_URL = os.environ.get("CERTIFIER_URL", "http://127.0.0.1:8003")
 
 # Batch number default usado quando o corpo de POST /credential não informa
 # um `batch_number` explícito (extensão própria do MVP, ver

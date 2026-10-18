@@ -29,7 +29,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 scenarios("../features/shacl_autoridade_validacao.feature")
 
-COOP_A_URL = "http://localhost:8001"
+COOP_A_URL = "http://127.0.0.1:8001"
 
 _coop_a_env = dotenv_values(REPO_ROOT / "coop-a" / ".env")
 COOP_A_FUSEKI_URL = _coop_a_env.get("FUSEKI_URL", "http://127.0.0.1:3030/coop-a")

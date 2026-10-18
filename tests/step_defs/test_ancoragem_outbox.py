@@ -52,7 +52,7 @@ from load_node_module import load_node_module  # noqa: E402
 
 scenarios("../features/ancoragem_outbox.feature")
 
-RPC_URL = "http://localhost:8545"
+RPC_URL = "http://127.0.0.1:8545"
 PRODUCER_NAME = "João da Silva"
 PRODUCER_DID = "did:key:z6MkhssBusXfHjvnvquNJjwQaVYTGsvgY9otdhLhKyCaXJT9"
 BEE_NS = "https://w3id.org/agrisemantics/AGRITRUST/bee-extension#"
@@ -76,8 +76,8 @@ def _node_config(name: str, url: str, default_fuseki: str) -> dict:
 
 
 _NODES = {
-    "coop-a": _node_config("coop-a", "http://localhost:8001", "http://127.0.0.1:3030/coop-a"),
-    "coop-b": _node_config("coop-b", "http://localhost:8002", "http://127.0.0.1:3031/coop-b"),
+    "coop-a": _node_config("coop-a", "http://127.0.0.1:8001", "http://127.0.0.1:3030/coop-a"),
+    "coop-b": _node_config("coop-b", "http://127.0.0.1:8002", "http://127.0.0.1:3031/coop-b"),
 }
 
 

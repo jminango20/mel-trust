@@ -51,7 +51,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 scenarios("../features/data_contract_leitura_pagamento.feature")
 
-COOP_A_URL = "http://localhost:8001"
+COOP_A_URL = "http://127.0.0.1:8001"
 DEPLOY_JSON = REPO_ROOT / "contracts" / "venda-dados" / "deployments" / "local.json"
 COOP_KEY_PATH = REPO_ROOT / "coop-a" / "keys" / "coop-a-besu.key"
 # Contas nº 1 e nº 2 do node de desenvolvimento do Hardhat (mnemônico público padrão).

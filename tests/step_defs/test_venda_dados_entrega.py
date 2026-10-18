@@ -52,7 +52,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 scenarios("../features/venda_dados_entrega.feature")
 
-COOP_A_URL = "http://localhost:8001"
+COOP_A_URL = "http://127.0.0.1:8001"
 PRODUCER_NAME = "Produtor Teste Entrega"
 BEE = "https://w3id.org/agrisemantics/AGRITRUST/bee-extension#"
 _PREFIX = f"PREFIX : <{BEE}>\nPREFIX agritrust: <https://w3id.org/agrisemantics/AGRITRUST#>\n"

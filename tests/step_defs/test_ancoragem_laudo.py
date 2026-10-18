@@ -35,8 +35,8 @@ sys.path.insert(0, str(REPO_ROOT))
 
 scenarios("../features/ancoragem_laudo.feature")
 
-COOP_A_URL = "http://localhost:8001"
-LAB_URL = "http://localhost:8005"
+COOP_A_URL = "http://127.0.0.1:8001"
+LAB_URL = "http://127.0.0.1:8005"
 PRODUCER_NAME = "João da Silva"
 PRODUCER_DID = "did:key:z6MkhssBusXfHjvnvquNJjwQaVYTGsvgY9otdhLhKyCaXJT9"
 

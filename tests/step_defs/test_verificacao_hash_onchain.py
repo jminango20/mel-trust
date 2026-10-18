@@ -36,10 +36,10 @@ from scripts.test_credential_flow import GRANT_TYPE, build_proof_jwt  # noqa: E4
 
 scenarios("../features/verificacao_hash_onchain.feature")
 
-COOP_A_URL = "http://localhost:8001"
-LAB_URL = "http://localhost:8005"
-CERTIFIER_URL = "http://localhost:8003"
-VERIFIER_URL = "http://localhost:8004"
+COOP_A_URL = "http://127.0.0.1:8001"
+LAB_URL = "http://127.0.0.1:8005"
+CERTIFIER_URL = "http://127.0.0.1:8003"
+VERIFIER_URL = "http://127.0.0.1:8004"
 PRODUCER_NAME = "João da Silva"
 PRODUCER_DID = "did:key:z6MkhssBusXfHjvnvquNJjwQaVYTGsvgY9otdhLhKyCaXJT9"
 PURPOSE_VALIDO = "Compliance EUDR"

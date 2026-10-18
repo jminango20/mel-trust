@@ -26,7 +26,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 scenarios("../features/lote_meliponary.feature")
 
-COOP_B_URL = "http://localhost:8002"
+COOP_B_URL = "http://127.0.0.1:8002"
 PRODUCER_NAME = "João da Silva"
 PRODUCER_DID = "did:key:z6Mkkc7de5XEc1sUGBYxHo8yLWM9yTsnorqCNK7HnE8SZnVT"
 

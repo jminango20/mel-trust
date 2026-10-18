@@ -52,10 +52,10 @@ sys.path.insert(0, str(REPO_ROOT))
 
 scenarios("../features/ancoragem_lote_produtor_reaproveitado.feature")
 
-COOP_B_URL = "http://localhost:8002"
+COOP_B_URL = "http://127.0.0.1:8002"
 PRODUCER_NAME = "João da Silva"
 
-RPC_URL = "http://localhost:8545"
+RPC_URL = "http://127.0.0.1:8545"
 CHANNEL_NAME = "mel-trust"
 ASSET_REGISTRY_ADDRESS = "0x0B306BF915C4d645ff596e518fAf3F9669b97016"
 

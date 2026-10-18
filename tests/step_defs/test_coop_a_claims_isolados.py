@@ -29,7 +29,7 @@ from scripts.test_credential_flow import GRANT_TYPE, b64url_json, build_proof_jw
 
 scenarios("../features/coop_a_claims_isolados.feature")
 
-COOP_A_URL = "http://localhost:8001"
+COOP_A_URL = "http://127.0.0.1:8001"
 BATCH_NUMBER = "MS-2026-042"
 PRE_AUTHORIZED_CODE = "coop-a-demo-pre-auth-code"
 PRODUCER_KEY_PATH = REPO_ROOT / "fixtures" / "producer-keys" / "producer-coop-a.pem"

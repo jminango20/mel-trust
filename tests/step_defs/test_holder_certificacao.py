@@ -29,8 +29,8 @@ from scripts.test_credential_flow import GRANT_TYPE, b64url_json, build_proof_jw
 
 scenarios("../features/holder_certificacao.feature")
 
-LAB_URL = "http://localhost:8005"
-CERTIFIER_URL = "http://localhost:8003"
+LAB_URL = "http://127.0.0.1:8005"
+CERTIFIER_URL = "http://127.0.0.1:8003"
 
 _certifier_env = dotenv_values(REPO_ROOT / "certifier" / ".env")
 CERTIFIER_FUSEKI_URL = _certifier_env.get("FUSEKI_URL", "http://127.0.0.1:3032/certifier")
