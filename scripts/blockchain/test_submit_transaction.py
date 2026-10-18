@@ -140,7 +140,7 @@ except ImportError:
     sys.exit(1)
 
 
-RPC_URL = "http://localhost:8545"
+RPC_URL = "http://127.0.0.1:8545"
 EXPECTED_CHAIN_ID = 648
 
 # Endereco JA CONFIRMADO em docs/referencia-contratos/README.md secao 5

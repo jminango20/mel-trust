@@ -145,7 +145,7 @@ except ImportError:
     sys.exit(1)
 
 
-RPC_URL = "http://localhost:8545"
+RPC_URL = "http://127.0.0.1:8545"
 EXPECTED_CHAIN_ID = 648
 
 PROCESS_REGISTRY_ADDRESS = "0x9A676e781A523b5d0C0e43731313A708CB607508"

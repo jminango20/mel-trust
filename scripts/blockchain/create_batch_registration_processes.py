@@ -110,7 +110,7 @@ except ImportError:
     sys.exit(1)
 
 
-RPC_URL = "http://localhost:8545"
+RPC_URL = "http://127.0.0.1:8545"
 EXPECTED_CHAIN_ID = 648
 
 ACCESS_CHANNEL_MANAGER_ADDRESS = "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"

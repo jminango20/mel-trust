@@ -160,7 +160,7 @@ except ImportError:
     sys.exit(1)
 
 
-RPC_URL = "http://localhost:8545"
+RPC_URL = "http://127.0.0.1:8545"
 EXPECTED_CHAIN_ID = 648
 
 SCHEMA_REGISTRY_ADDRESS = "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"

@@ -19,7 +19,7 @@ Uso (rodar com o venv de qualquer nó; precisa de jwcrypto e requests):
         --pre-authorized-code coop-a-demo-pre-auth-code \\
         --key fixtures/producer-keys/producer-coop-a.pem
 
-Opcionais: --host (default localhost), --batch-number, --config-id
+Opcionais: --host (default 127.0.0.1), --batch-number, --config-id
 (default: primeiro de credential_configurations_supported), --demo (resumo
 legível para tela projetada, sem payload bruto/digests nem SD-JWT bruto).
 """
@@ -91,7 +91,7 @@ def main() -> None:
     ap.add_argument("--port", type=int, required=True)
     ap.add_argument("--pre-authorized-code", required=True)
     ap.add_argument("--key", required=True, help="PEM PKCS8 Ed25519 do produtor")
-    ap.add_argument("--host", default="localhost")
+    ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--batch-number", default=None)
     ap.add_argument("--config-id", default=None)
     ap.add_argument("--demo", action="store_true", help="saída resumida e legível (sem payload bruto)")
