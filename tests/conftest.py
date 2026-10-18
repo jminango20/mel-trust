@@ -87,7 +87,9 @@ WHERE {
 
 # coop-a: DataContract de consumidor sintético (test_data_contract.py), allowlist ANCORADA
 # no rdfs:label do assignee. Apaga o contrato e o recurso do consumidor.
-_TEST_CONSUMER_PATTERN = r"^ConsumidorTeste-[0-9a-f]{12}$"
+# Sufixo opcional `-especial...` (flag "s": o ponto casa quebra de linha) so para o teste de
+# integracao da ref (test_data_contract_pagamento.py), cujo nome tem acento, aspas, barra, quebra de linha e emoji.
+_TEST_CONSUMER_PATTERN = r"^ConsumidorTeste-[0-9a-f]{12}(-especial.*)?$"
 _TEST_DATA_CONTRACTS_UPDATE = """
 PREFIX agritrust: <https://w3id.org/agrisemantics/AGRITRUST#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -95,7 +97,7 @@ DELETE { ?c ?p ?o . ?a ?ap ?ao }
 WHERE {
   ?c a agritrust:DataContract ; agritrust:hasPolicyAssignee ?a .
   ?a rdfs:label ?n .
-  FILTER REGEX(STR(?n), "%s")
+  FILTER REGEX(STR(?n), "%s", "s")
   ?c ?p ?o .
   ?a ?ap ?ao .
 }
