@@ -27,6 +27,10 @@ Scaffold do `verifier-demo` (FastAPI). Lógica federada (SPARQL SERVICE
 contra coop-a + coop-b + certifier, checagem ODRL, validação SHACL +
 confirmação on-chain) ainda não implementada.
 
+**Atualização (2026-10-18):** implementado depois, nas entradas abaixo: federação, ODRL e SHACL em
+"M9.5" e "M9.5 (parte 2)"; confirmação on-chain em "M8 — ancoragem real dos 3 eventos"; OID4VP em
+"M7". Texto original mantido.
+
 ## M2 — token endpoint (pre-authorized_code flow)
 
 `POST /token` em coop-a: troca `pre-authorized_code` (fixo/hardcoded no
@@ -230,6 +234,10 @@ certifier. NÃO implementado ainda (escopo de entrega futura, em cima
 desta): checagem ODRL de propósito, validação SHACL da resposta,
 conferência de hash on-chain (M11).
 
+**Atualização (2026-10-18):** ODRL e SHACL da resposta entraram em "M9.5 (parte 2)". A conferência de
+hash on-chain foi entregue no **M8** (`onChainIntegrity` em `GET /verify`; ver "M8 — ancoragem real dos
+3 eventos"), não no M11: o rótulo "M11" acima está desatualizado. Texto original mantido.
+
 **SPARQL federado de verdade** (`SERVICE`), não simulação em Python: uma
 única query SPARQL enviada ao Fuseki do coop-a (nó de entrada fixo,
 escolha arbitrária mas consistente), com `UNION` pra achar o lote (local
@@ -391,6 +399,9 @@ disclosure, nunca persistido em nenhum Fuseki), só verificável quando o
 holder apresenta a credencial (OID4VP, ainda não implementado — ver
 `docs/notas-arquitetura/m5-verificacao-assinatura-adiada.md`).
 
+**Atualização (2026-10-18):** o OID4VP foi implementado depois: ver a entrada "M7 — OID4VP: apresentação
+e validação de VC com prova de posse fresca". Texto original mantido.
+
 **2 bugs de hash corrigidos** (`coop-a` e depois `coop-b`,
 `lote_endpoint.py`):
 1. Não-determinismo: `rdflib.Graph.serialize(format="nt")` não garante
@@ -529,6 +540,10 @@ implementada). Tudo em `docs/known-issues.md`.
 Atualização (2026-10-11): o `in_flight` foi implementado (ver a entrada do
 `in_flight`) e o outbox do lab também (ver a entrada do lab). O certifier
 continua sem outbox.
+
+**Atualização (2026-10-18):** o certifier também ganhou o outbox (ver "Outbox de ancoragem da VC de
+certificação (certifier)"), então os quatro nós (coop-a, coop-b, lab e certifier) têm outbox com
+`in_flight`. O "continua sem outbox" acima está desatualizado. Texto original mantido.
 
 ## Outbox: retry trata "Known transaction" como in_flight (coop-a e coop-b) — ✅ testado e confirmado
 
@@ -719,6 +734,14 @@ ser replicado nas quatro; extrair para um módulo comum fica como decisão futur
   contra a enviada (idêntica; a troca de caracteres vista antes era só do console).
   Script: `scripts/blockchain/update_schema.py`. A ancoragem de lote, laudo e certificação
   continuou funcionando (`test_ancoragem_lote/laudo/certificacao.py` e a suíte completa).
+  **Correção (2026-10-18):** a atribuição ao `f905fcd` acima está imprecisa quanto à `CertificateShape`.
+  `git log -S "CertificateShape" -- ontology/validation-shapes.ttl` só retorna `f905fcd`, e o diff
+  mostra que ele **adicionou** a `CertificateShape` (não existia antes); só o `sh:Info` de
+  `HoneyNativeMoistureShape` foi **corrigido** nesse commit (`git log -S "dentro do limite para
+  aproveitamento condicional"` retorna `f905fcd` e o commit inicial `16acdcc`, de onde vinha o texto).
+  O restante vale: o arquivo anterior ao `f905fcd`, em CRLF, tem keccak256
+  `0xb4385c37d4db5a604b36ffcdc0663a490fae7617b7bb0b6428ab7fc94d21c041`, igual ao `dataHash` da v1
+  (conferido em 2026-10-18; em LF o hash daquele arquivo seria `0xf0692eaa…ae46`). Texto original mantido.
 - **`.gitattributes` `*.ttl text eol=lf`.** O índice já guardava LF; o arquivo e o hash deixam
   de depender da conversão de fim de linha de cada máquina (`git add --renormalize .` não
   mudou nenhum arquivo).
@@ -755,6 +778,11 @@ aparece quando o RPC está fora do ar. Antes da troca, grep confirmou que o RPC 
 (o `config.py` é lido na importação). Os testes (`RPC_URL` em `test_ancoragem_outbox*.py`) e
 `scripts/` continuam com `localhost`, de propósito.
 
+**Atualização (2026-10-18):** isso deixou de valer. Os testes, o `CERTIFIER_URL` do coop-a, os scripts de
+`scripts/` e os `.env.example` passaram a usar `127.0.0.1` nas URLs de conexão (commits `0d1d4a7` e
+`5c194a6`); ver a entrada "Venda de dados: estado em 2026-10-18 (executada pelo agente)", item 6.
+Texto original mantido.
+
 Suíte: **44 passed, 3 deselected** — uma rodada. Mesma ressalva de ambiente (máquina acordada
 e túnel do Besu ativo).
 
@@ -782,3 +810,80 @@ e túnel do Besu ativo).
 - Agendador de retry (o `POST /anchoring/retry` é manual).
 
 Rótulo "executada pelo agente": sem confirmação do Juan para o fechamento do escopo.
+
+## Venda de dados: estado em 2026-10-18 (executada pelo agente)
+
+Sem confirmação do Juan: nada abaixo está marcado como "testado e confirmado". Os resultados são das
+rodadas do agente; o detalhe por tarefa está em `docs/SYNC.md`. O fechamento de escopo do M8 (entrada
+acima) não foi alterado e segue sem confirmação.
+
+1. **Quantidade do lote em mL (coop-a).** `POST /lote` aceita `quantityLiters` opcional (até 3 casas) e
+   guarda `:quantityMilliliters` (inteiro, mL) no recurso do lote; `HoneyBatchQuantityShape` valida. O
+   `amount` do `createAsset` e do retry de ancoragem passa a ser a quantidade real (antes, 1 fixo). A
+   quantidade não entra no hash ancorado. O coop-b não tem quantidade.
+2. **`VendaDados.sol`** (`contracts/venda-dados/`, Hardhat 3, OpenZeppelin 5, solc 0.8.28). ERC20 de cotas
+   (1 cota = 1 mL entregue, `decimals` 0, não transferível); `registrarEntrega` (só a cooperativa;
+   repetir com os mesmos dados é no-op, com dados diferentes reverte); pagamento retido e liberado:
+   `depositar`, `liberar`, `reembolsar`, `recuperarReembolso` (comprador, após o prazo); repartição O(1)
+   por acumulador (`acumuladoPorCota`), `sacar` e `recuperarCarteira`. `MockUSDT` só para teste.
+   45 testes no Hardhat (35 do contrato + 10 do getter `depositos(ref)` e da ref no formato do coop-a),
+   com mutações verificadas em cópia. Deploy e smoke em node local (chainId 31337, porta 8546);
+   `scripts/deploy-local.js` escreve `deployments/local.json`. Não implantado em rede real, sem revisão
+   de segurança externa, poeira de divisão sem `sweep`.
+3. **Entrega no VendaDados (coop-a).** `coop-a/delivery.py`: quando o lote tem quantidade, `POST /lote`
+   registra a entrega (`registrarEntrega` para a carteira custodial do produtor, `batchRef` =
+   keccak256(`batchNumber`)) e a resposta traz `deliveryStatus` (`registered`, `skipped`, `pending` ou
+   `mismatch`). A `DeliveryTask` fica em recurso separado no Fuseki (não altera o hash) e
+   `POST /delivery/retry` consulta `entregas(batchRef)` antes de enviar (já registrado só marca
+   `registered`; dados diferentes = `mismatch`). Carteira custodial por `producerDID` em
+   `coop-a/keys/producers/` (gitignored; só rede de teste). Erros HTTP: mensagem fixa e detalhe só no log;
+   exceção: o `mismatch` devolve o detalhe on-chain (endereços e mL), que não é segredo. Configuração: `VENDA_DADOS_RPC_URL`, `VENDA_DADOS_ADDRESS`, `VENDA_DADOS_CHAIN_ID`
+   (`venda_dados_config()`).
+4. **Contrato de Dados (coop-a).** `POST /data-contract` com consumidor, `purpose`, `priceUnits` (inteiro,
+   menor unidade do USDT mock, 6 casas), `buyerWallet` (EIP-55) e `validFrom`/`validUntil` (ISO 8601 com
+   hora e fuso). `contractRef` = keccak256 do JSON canônico dos termos, como implementado em
+   `coop-a/data_contract_endpoint.py`: `terms = {k: body[k] for k in _TERM_KEYS if k in body}` (só as 6
+   chaves `consumer`, `purpose`, `priceUnits`, `buyerWallet`, `validFrom`, `validUntil`, e só as que
+   vieram; chaves extras são ignoradas), serializado por
+   `json.dumps(terms, sort_keys=True, separators=(",", ":"), ensure_ascii=False)` e hasheado com
+   `Web3.keccak(text=canonical)` (bytes UTF-8). Ou seja: chaves em ordem alfabética, sem espaços;
+   **caracteres não-ASCII NÃO são escapados** (entram como UTF-8); aspas, barra invertida, quebra de
+   linha e demais controles abaixo de U+0020 **continuam escapados como em JSON** (`\"`, `\\`, `\n`,
+   `\u00XX`); valores e datas exatamente como recebidos (`priceUnits` inteiro, datas em texto sem
+   normalização). O mesmo bytes32 serve de `ref` no VendaDados. Respostas: 201; 409
+   `already_exists` com o `contractRef`; 400 `shacl_violation`; 400 `invalid_request` (forma, inclusive
+   data sem hora ou sem fuso). Regras de negócio no SHACL (`DataContractShape`: `priceUnits` >= 1,
+   `validFrom` `sh:lessThan` `validUntil`). Propriedades novas `:priceUnits`, `:contractRef` e
+   `:buyerWallet` em `bee-extension.ttl` (o `.owl` não foi regenerado). A ref é reproduzida byte a byte
+   por um helper Node/ethers nos testes e aceita em `depositar`.
+5. **Leitura do pagamento.** `GET /data-contract/{contractRef}/payment` lê `depositos(ref)` por `eth_call`
+   (sem chave) e os termos do Fuseki. `status`: `not_paid`, `paid`, `mismatch`, `outside_window`,
+   `released` ou `refunded`. Precedência: estado 0 = `not_paid`; comprador ou valor diferentes de
+   `buyerWallet`/`priceUnits` = `mismatch`; estado 2 = `released`; estado 3 = `refunded`; estado 1 fora
+   da janela = `outside_window`; senão `paid`. Janela inclusiva no código, sem teste de borda
+   (`_to_utc(validFrom) <= deposited <= _to_utc(validUntil)` em `payment_status`; os testes usam janelas
+   de horas ou dias, nunca exatamente o limite): o timestamp do bloco do depósito é comparado com
+   `validFrom`/`validUntil` convertidos para UTC. 404 `not_found` (contrato inexistente ou
+   ref mal formada); 503 `service_unavailable` com mensagem fixa (node ou Fuseki indisponível).
+6. **`localhost` por `127.0.0.1` nas URLs de conexão.** `localhost` resolve `::1` primeiro e o uvicorn só
+   escuta em IPv4, o que custa ~2,05 s por requisição no Windows (medido; em `test_apresentacao_vp` são
+   10 saltos, ~20,5 s de ~27 s). Trocado em `coop-a/config.py` (`CERTIFIER_URL`), nas constantes dos
+   testes, em `scripts/blockchain/*.py`, `scripts/test_credential_flow.py` e nos `.env.example`
+   (commits `0d1d4a7` e `5c194a6`). Não mudaram: `did:web`, `BASE_URL`, `credential_issuer` nem o `aud`
+   do KB-JWT (nos testes de VP, `VERIFIER_AUDIENCE` segue `http://localhost:8004`). Efeito medido:
+   `test_apresentacao_vp` de 27–40 s para ~7 s; suíte completa de 614–678 s (~10–11 min) para 210 s
+   (~3,5 min).
+
+**Referências (informadas pelo Juan; não verificadas pelo agente):**
+(a) o `VendaDados` é adaptado do contrato ISD do artigo (Economies, DOI 10.3390/economies14060220);
+(b) Ivan, em Q2/Q3: `VerifierResponseShape` aceita; `CertificateShape` com `rdfs:comment` obrigatório
+(número ou hash do certificado).
+
+**Suíte (rodada mais recente do agente, 2026-10-18):** `1 failed, 77 passed, 5 deselected in 210.41s
+(0:03:30)`. A única falha é `test_schema_sincronizado`, vermelha de propósito: o `update_schema.py` não foi
+rodado desde as mudanças de shape (quantidade, descrição do certificado e contrato de dados); o schema
+on-chain segue na v2 (`0x01ca…`) e o hash do arquivo é outro. Cenários `@node_parado` ficam fora da suíte
+padrão (`-m node_parado`, exigem o node 8546 parado).
+
+**Limites e pendências:** `docs/known-issues.md` (carteiras custodiais, corrida em `POST /data-contract`,
+datas legadas sem fuso, `.owl` defasado) e `docs/SYNC.md`.

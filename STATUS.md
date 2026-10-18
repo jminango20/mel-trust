@@ -13,11 +13,6 @@ ainda não confirmado, está marcado como tal, não como concluído.
 `coop-a`, `coop-b`, `certifier`: mesmo padrão estrutural (FastAPI + Fuseki
 + pipeline SHACL → SPARQL Update), todos com:
 
-`lab`: 5º nó real (FastAPI + Fuseki próprio, `POST /analise` — gate SHACL de
-forma + persistência), consultado pelo `certifier` via SPARQL federado
-(`SERVICE`). Não segue a lista M1-M4 abaixo (não emite VC nem faz OID4VCI —
-escopo próprio, ver `CLAUDE.md`).
-
 - M1 — metadata endpoint (`/.well-known/openid-credential-issuer`)
 - M1.5 — gate SHACL antes da inserção no Fuseki
 - M2 — `/token` (pre-authorized_code flow)
@@ -26,6 +21,11 @@ escopo próprio, ver `CLAUDE.md`).
 - M4 — claims via query SPARQL real contra o Fuseki (não mais hardcoded)
 
 Todos testados e confirmados por Juan (datas em `CHANGELOG.md`).
+
+**`lab` (fora da lista M1–M4 acima):** 5º nó real (FastAPI + Fuseki próprio, `POST /analise` — gate SHACL de
+forma + persistência), consultado pelo `certifier` via SPARQL federado
+(`SERVICE`). Não segue a lista M1-M4 acima (não emite VC nem faz OID4VCI —
+escopo próprio, ver `CLAUDE.md`).
 
 **Ajuste pós-demo, testado**: `floralOrigin` é campo do PRODUTOR (claim
 disclosable de `batch`, em coop-a/coop-b — `:hasFloralOrigin` no recurso do
@@ -52,7 +52,7 @@ removido — `POST /lote` é a única via de entrada.
 4 contas de nó membros do canal `"mel-trust"` (coop-a, coop-b, certifier,
 lab — o verifier-demo só lê, não tem conta).
 
-## verifier-demo — M9.5: 3 dos 4 passos do fluxo implementados
+## verifier-demo — M9.5: os 4 passos do fluxo implementados (o passo 4 via M8)
 
 Fluxo de verificação definido no `CLAUDE.md` (auditor/comprador):
 
@@ -118,29 +118,9 @@ hash irrecuperável; allowlist de
 `tests/conftest.py` precisa de atualização a cada teste novo com
 batchNumber sintético. Detalhes: `CHANGELOG.md`.
 
-## Suíte de testes BDD (`tests/`)
+## M8 — ancoragem blockchain: completo
 
-44 testes passando (`tests/features/*.feature`, `pytest tests/`), zero
-falha, confirmados por Juan (`44 passed, 3 deselected`, 2026-10-12). São os 41
-anteriores (22 cenários originais + outbox de ancoragem em coop-a/coop-b +
-`in_flight`/revert real + outbox do laudo no lab + outbox da VC no certifier,
-ver seção acima) + 1 de schema sincronizado
-(`schema_sincronizado.feature`: `dataHash` do `honey-validation-shapes` ativo
-on-chain, hoje v2, igual ao hash canônico do `.ttl`) + 2 da proteção da
-limpeza do `tests/conftest.py` (`conftest_allowlist.feature`, 1 cenário ×
-coop-a/coop-b; regex da allowlist e `FILTER NOT EXISTS`, com mutação
-verificada). **Só passa com a máquina acordada e o túnel do Besu ativo** (ver
-`docs/known-issues.md`).
-3 cenários adicionais marcados `@futuro` (deselecionados por padrão via
-`pytest.ini`).
-
-## Fora do escopo até agora (roadmap futuro, ver CLAUDE.md)
-
-M5.5 (registro de produtor/rotação de chaves + PROV-O de certificação), M6
-(revogação — SPARQL federado já antecipado em M9.5, não mais pendente),
-M10-M11 não iniciados.
-
-**M8 (ancoragem blockchain): completo.** Canal `"mel-trust"` criado
+Canal `"mel-trust"` criado
 on-chain, 4 contas de nó membros (coop-a, coop-b, certifier, lab). Schema +
 processos registrados (`SchemaRegistry`/`ProcessRegistry`). Ancoragem real
 via `TransactionOrchestrator.submitTransaction` nos 3 eventos (lote via
@@ -162,3 +142,65 @@ verdade. Detalhes completos:
 **Passo 4 do fluxo de `verifier-demo`** (tabela M9.5 acima, "confere hash
 no `AssetRegistry.sol`"): implementado como parte deste M8, não mais
 "não iniciado".
+
+O fechamento de escopo do M8 (`CHANGELOG.md`, "M8 fechado: escopo") segue sem confirmação do Juan.
+
+## Venda de dados (coop-a + VendaDados) — implementada pelo agente, sem confirmação do Juan
+
+Detalhe e números: `CHANGELOG.md` (entrada "Venda de dados: estado em 2026-10-18") e `docs/SYNC.md`.
+Nada aqui está marcado como testado e confirmado: o que existe são rodadas do agente.
+
+- **Quantidade do lote (coop-a):** `quantityLiters` opcional em `POST /lote` vira `:quantityMilliliters`
+  (mL); `HoneyBatchQuantityShape`; `amount` real no `createAsset` e no retry. Fora do hash. coop-b sem
+  quantidade nem entrega.
+- **`VendaDados.sol`** (`contracts/venda-dados/`): cotas por mL entregue (ERC20 não transferível),
+  pagamento retido e liberado, reembolso, repartição O(1). 45 testes no Hardhat com mutações. Roda no node
+  local 8546 (chainId 31337, efêmero) com `MockUSDT`; não implantado em rede real.
+- **Entrega (coop-a):** `POST /lote` com quantidade registra a entrega no VendaDados
+  (`deliveryStatus`); `DeliveryTask` em recurso separado; `POST /delivery/retry`. Carteira custodial por
+  produtor em disco (só rede de teste).
+- **Contrato de Dados (coop-a):** `POST /data-contract` com `contractRef` (keccak256 do JSON canônico);
+  `DataContractShape` com `priceUnits` >= 1 e `validFrom` < `validUntil`; datas ISO 8601 com hora e fuso.
+- **Leitura do pagamento:** `GET /data-contract/{ref}/payment` (`not_paid`, `paid`, `mismatch`,
+  `outside_window`, `released`, `refunded`), lendo `depositos(ref)` sem chave; janela em UTC pelo
+  timestamp do bloco.
+- **URLs de conexão em `127.0.0.1`** (testes, `CERTIFIER_URL`, scripts, `.env.example`): suíte de
+  ~10–11 min para ~3,5 min. `did:web`, `BASE_URL` e `aud` não mudaram.
+
+## Suíte de testes BDD (`tests/`)
+
+Rodada mais recente (executada pelo agente, 2026-10-18; **sem confirmação do Juan**):
+`1 failed, 77 passed, 5 deselected in 210.41s (0:03:30)`. A única falha é o teste de sincronização do
+schema, **vermelho de propósito** (ver abaixo). Coleta conferida em 2026-10-18 com
+`pytest tests/ --collect-only -q` (sem executar): 83 testes no total, 78 selecionados e 5
+deselecionados (fora da suíte padrão via `pytest.ini`) = 3 `@futuro` (todos em
+`test_rastreabilidade.py`) + 2 `@node_parado` (`test_venda_dados_entrega.py` e
+`test_data_contract_leitura_pagamento.py`); a união de `futuro` e `node_parado` também dá 5, sem
+sobreposição.
+
+**Schema sincronizado — vermelho de propósito:** `schema_sincronizado.feature` compara o `dataHash` do
+`honey-validation-shapes` ativo on-chain com o hash canônico do `ontology/validation-shapes.ttl`. Em
+2026-10-12 os dois eram iguais (v2). Desde então o `.ttl` mudou 3 vezes (`HoneyBatchQuantityShape`,
+descrição obrigatória na `CertificateShape`, `DataContractShape` com `priceUnits` e `sh:lessThan`) e o
+`scripts/blockchain/update_schema.py` não foi rodado: o on-chain segue na v2 (`0x01ca…`) e o hash do
+arquivo é outro. O teste fica vermelho até a reimplantação do schema.
+
+Marco anterior, confirmado por Juan (`44 passed, 3 deselected`, 2026-10-12): 44 testes passando
+(`tests/features/*.feature`, `pytest tests/`), zero falha. Eram os 41
+anteriores (22 cenários originais + outbox de ancoragem em coop-a/coop-b +
+`in_flight`/revert real + outbox do laudo no lab + outbox da VC no certifier,
+ver seção acima) + 1 de schema sincronizado (que então passava) + 2 da proteção da
+limpeza do `tests/conftest.py` (`conftest_allowlist.feature`, 1 cenário ×
+coop-a/coop-b; regex da allowlist e `FILTER NOT EXISTS`, com mutação
+verificada). De lá para cá entraram os testes da quantidade do lote, da entrega no VendaDados, do
+Contrato de Dados, da leitura do pagamento e da troca de URLs (seção "Venda de dados" acima).
+**Só passa com a máquina acordada, o túnel do Besu ativo e o node do VendaDados (8546) com o deploy feito**
+(ver `docs/known-issues.md` e a seção Testes do `CLAUDE.md`).
+3 cenários adicionais marcados `@futuro` (deselecionados por padrão via
+`pytest.ini`).
+
+## Fora do escopo até agora (roadmap futuro, ver CLAUDE.md)
+
+- M5.5 (registro de produtor/rotação de chaves + PROV-O de certificação): não iniciado
+- M6 (revogação, StatusList2021): não iniciado
+- M10–M11: não iniciados
