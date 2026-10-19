@@ -27,7 +27,6 @@ import logging
 import os
 import threading
 
-from eth_account import Account
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from web3 import Web3
@@ -104,7 +103,7 @@ def _withdraw(account) -> dict:
     saldo_nativo = w3.eth.get_balance(account.address)
     if saldo_nativo < necessario:
         valor = max(_topup_wei(), necessario - saldo_nativo)
-        coop = Account.from_key("0x" + delivery.COOP_KEY_PATH.read_text(encoding="utf-8").strip())
+        coop = delivery.load_coop_account()
         _send(w3, coop, {
             "to": account.address, "value": valor, "gas": 21000, "gasPrice": gas_price,
             "nonce": w3.eth.get_transaction_count(coop.address, "pending"), "chainId": chain_id,

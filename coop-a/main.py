@@ -37,6 +37,7 @@ from delivery import router as delivery_router
 from did_endpoint import router as did_router
 from lote_endpoint import router as lote_router
 from nonce_endpoint import router as nonce_router
+from release_endpoint import router as release_router
 from token_endpoint import router as token_router
 from withdraw_endpoint import router as withdraw_router
 
@@ -49,6 +50,7 @@ app.include_router(lote_router)
 app.include_router(delivery_router)
 app.include_router(data_contract_router)
 app.include_router(withdraw_router)
+app.include_router(release_router)
 
 
 @app.get("/.well-known/openid-credential-issuer")

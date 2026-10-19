@@ -48,6 +48,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "tests" / "support"))
 from load_node_module import load_node_module  # noqa: E402
+from venda_dados_deploy import deploy_proprio  # noqa: E402
 
 scenarios("../features/venda_dados_saque.feature")
 
@@ -167,26 +168,13 @@ def _post_withdraw(context):
     return requests.post(f"{COOP_A_URL}/producers/{context['did']}/withdraw", timeout=60)
 
 
-ARTIFACTS = REPO_ROOT / "contracts" / "venda-dados" / "artifacts" / "contracts"
-
-
 @given("um deploy próprio do VendaDados com parte da cooperativa de 10% usado pelo coop-a nesse cenário")
 def _deploy_proprio(context):
     """Implanta um MockUSDT + VendaDados NOVOS (cooperativa = chave do coop-a, parte 10%, reembolso 30 dias)
     e aponta `deployments/local.json` para eles durante o cenário: o coop-a lê esse arquivo a cada chamada
     (`venda_dados_config`). O arquivo original é restaurado no fim (fixture `context`)."""
-    dep = _deploy()
-    w3 = Web3(Web3.HTTPProvider(dep["rpcUrl"], request_kwargs={"timeout": 30}))
-    banco = w3.eth.accounts[0]  # conta nº 0 do node de dev (destravada), como em deploy-local.js
-    usdt_art = json.loads((ARTIFACTS / "test" / "MockUSDT.sol" / "MockUSDT.json").read_text())
-    venda_art = json.loads((ARTIFACTS / "VendaDados.sol" / "VendaDados.json").read_text())
-    tx = w3.eth.contract(abi=usdt_art["abi"], bytecode=usdt_art["bytecode"]).constructor().transact({"from": banco})
-    usdt_addr = w3.eth.wait_for_transaction_receipt(tx).contractAddress
-    tx = w3.eth.contract(abi=venda_art["abi"], bytecode=venda_art["bytecode"]).constructor(
-        usdt_addr, _coop().address, 10, 30 * 24 * 60 * 60).transact({"from": banco})
-    venda_addr = w3.eth.wait_for_transaction_receipt(tx).contractAddress
-    context["local_json_original"] = DEPLOY_JSON.read_bytes()
-    DEPLOY_JSON.write_bytes((json.dumps({**dep, "usdt": usdt_addr, "vendaDados": venda_addr}, indent=2) + "\n").encode("utf-8"))
+    _deploy()  # falha com a instrução certa se o deploy padrão não existe
+    context["local_json_original"] = deploy_proprio(10)  # implementação compartilhada em tests/support
 
 
 @given("o saldo sacável da cooperativa foi anotado")

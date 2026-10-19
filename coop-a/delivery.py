@@ -91,6 +91,11 @@ def _key_path(producer_did: str) -> Path:
     return PRODUCERS_KEY_DIR / (hashlib.sha256(producer_did.encode("utf-8")).hexdigest() + ".key")
 
 
+def load_coop_account():
+    """Conta (eth_account) da cooperativa, lida de COOP_KEY_PATH (coop-a-besu.key). Só LÊ."""
+    return Account.from_key("0x" + COOP_KEY_PATH.read_text(encoding="utf-8").strip())
+
+
 def get_or_create_wallet(producer_did: str) -> str:
     """Endereço da carteira custodial do produtor; cria a chave se ainda não existe
     (criação exclusiva: duas chamadas simultâneas não geram duas chaves)."""
@@ -190,7 +195,7 @@ def deliver(batch_number: str, producer_did: str, milliliters: int) -> tuple[str
         return "mismatch", None, (f"on-chain: produtor {produtor}, {ml_onchain} mL; "
                                   f"esperado: produtor {wallet}, {milliliters} mL")
 
-    coop = Account.from_key("0x" + COOP_KEY_PATH.read_text(encoding="utf-8").strip())
+    coop = load_coop_account()
     tx = venda.functions.registrarEntrega(wallet, batch_ref, milliliters).build_transaction(
         {"from": coop.address, "nonce": w3.eth.get_transaction_count(coop.address, "pending"), "chainId": w3.eth.chain_id})
     signed = coop.sign_transaction(tx)
