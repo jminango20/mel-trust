@@ -105,6 +105,16 @@ def get_or_create_wallet(producer_did: str) -> str:
     return Account.from_key("0x" + path.read_text(encoding="utf-8").strip()).address
 
 
+def load_wallet_account(producer_did: str):
+    """Conta (eth_account) da carteira custodial do produtor, ou None se o arquivo da chave NÃO existir.
+    Só LÊ: nunca cria chave (diferente de `get_or_create_wallet`). Usada pelo saque, que não pode
+    inventar uma carteira nova para um DID desconhecido."""
+    path = _key_path(producer_did)
+    if not path.exists():
+        return None
+    return Account.from_key("0x" + path.read_text(encoding="utf-8").strip())
+
+
 # --- Marca de entrega (DeliveryTask) no Fuseki ---
 
 def _literal(value: str) -> str:
