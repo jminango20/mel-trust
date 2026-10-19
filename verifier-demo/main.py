@@ -23,12 +23,14 @@ contra cnf.jwk, hash do Credential-JWT vs. dataHashes[] ancorado) — ver
 from fastapi import FastAPI
 
 from config import NODE_NAME
+from data_access_endpoint import router as data_access_router
 from presentation_request_endpoint import router as presentation_request_router
 from present_response_endpoint import router as present_response_router
 from verify_endpoint import router as verify_router
 
 app = FastAPI(title=f"AgriTrust Mel — {NODE_NAME}")
 app.include_router(verify_router)
+app.include_router(data_access_router)
 app.include_router(presentation_request_router)
 app.include_router(present_response_router)
 

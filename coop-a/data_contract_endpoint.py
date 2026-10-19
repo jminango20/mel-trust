@@ -29,7 +29,7 @@ pelo rdflib, ex. `Z` vira `+00:00`.)
 GET /data-contract/{contractRef}/payment — status do pagamento, SÓ LEITURA, SEM CHAVE: lê
 `depositos(ref)` do VendaDados por eth_call (mesma configuração VENDA_DADOS_* de delivery.py)
 e os termos (buyerWallet, priceUnits, validFrom, validUntil) do Fuseki. 200
-{"contractRef", "status"}; 404 {"error": "not_found"} (nenhum contrato com essa ref, ou ref
+{"contractRef", "buyerWallet", "status"} (buyerWallet = o dos termos, em todos os status); 404 {"error": "not_found"} (nenhum contrato com essa ref, ou ref
 mal formada); 503 {"error": "service_unavailable"} com mensagem FIXA (Fuseki ou node fora do ar;
 o texto da exceção só vai ao log). Precedência do status (`payment_status`):
   estado 0 -> not_paid; comprador/valor != buyerWallet/priceUnits -> mismatch;
@@ -254,4 +254,5 @@ def get_data_contract_payment(contract_ref: str):
     except Exception as exc:  # noqa: BLE001 - node parado, RPC lento, revert, chainId errado: tudo vira 503 fixo
         logger.error("GET /data-contract/%s/payment: leitura do VendaDados falhou: %s", contract_ref, exc)
         return _error(503, "service_unavailable", SERVICE_UNAVAILABLE_MSG)
-    return {"contractRef": contract_ref, "status": payment_status(estado, comprador, valor, depositado_em, terms)}
+    return {"contractRef": contract_ref, "buyerWallet": terms["buyerWallet"],
+            "status": payment_status(estado, comprador, valor, depositado_em, terms)}

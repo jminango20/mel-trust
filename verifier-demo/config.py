@@ -76,3 +76,10 @@ ADDRESS_DISCOVERY_ADDRESS = os.environ.get(
     "BESU_ADDRESS_DISCOVERY_ADDRESS", "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e"
 )
 CHANNEL_NAME = os.environ.get("BESU_CHANNEL_NAME", "mel-trust")
+
+
+# --- Acesso aos dados com desafio assinado (data_access_endpoint.py) ---
+# coop-a: de onde o verifier-demo lê buyerWallet e status do pagamento (GET /data-contract/{ref}/payment).
+COOP_A_URL = os.environ.get("COOP_A_URL", "http://127.0.0.1:8001")
+# Validade do desafio (nonce), em segundos.
+CHALLENGE_TTL_SECONDS = int(os.environ.get("CHALLENGE_TTL_SECONDS", "300"))

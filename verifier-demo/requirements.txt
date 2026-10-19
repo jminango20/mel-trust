@@ -5,6 +5,7 @@ requests
 rdflib
 pyshacl
 web3
+eth-account
 
 # M9.7: decodifica JWT (PyJWT, sem verificar assinatura — mesma
 # simplificação de MVP já usada no resto do projeto) e verifica a
