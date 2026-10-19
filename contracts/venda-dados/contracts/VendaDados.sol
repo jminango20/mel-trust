@@ -175,6 +175,14 @@ contract VendaDados is ERC20, ReentrancyGuard {
         emit Sacado(msg.sender, valor);
     }
 
+    /// @notice SÓ LEITURA (não altera estado): quanto `conta` receberia se chamasse `sacar()` agora.
+    /// É `saldoSacavel[conta]` (já assentado) mais o rendimento pendente das cotas atuais desde o
+    /// checkpoint, calculado por `_pendente`, a mesma conta de `_assentar`. O getter público
+    /// `saldoSacavel` sozinho não inclui o pendente, que só entra no saldo quando `_assentar` roda.
+    function saldoTotalSacavel(address conta) external view returns (uint256) {
+        return saldoSacavel[conta] + _pendente(conta);
+    }
+
     /// @notice Troca de carteira (chave perdida): move cotas e saldo sacável.
     function recuperarCarteira(address antiga, address nova) external soCooperativa {
         if (nova == address(0) || antiga == nova) revert CarteiraInvalida();
@@ -201,10 +209,16 @@ contract VendaDados is ERC20, ReentrancyGuard {
         if (d.estado != Estado.Depositado) revert DepositoNaoPendente(ref, d.estado);
     }
 
+    /// @dev Rendimento das cotas atuais da conta desde o checkpoint (divisão inteira, piso). Usado por
+    /// `_assentar` e por `saldoTotalSacavel`: a mesma aritmética e o mesmo arredondamento nos dois.
+    function _pendente(address conta) private view returns (uint256) {
+        return (balanceOf(conta) * (acumuladoPorCota - checkpoint[conta])) / PRECISAO;
+    }
+
     /// @dev Soma ao saldo sacável o que as cotas atuais da conta renderam desde o checkpoint.
     function _assentar(address conta) private {
         uint256 atual = acumuladoPorCota;
-        uint256 pendente = (balanceOf(conta) * (atual - checkpoint[conta])) / PRECISAO;
+        uint256 pendente = _pendente(conta);
         if (pendente != 0) saldoSacavel[conta] += pendente;
         checkpoint[conta] = atual;
     }
