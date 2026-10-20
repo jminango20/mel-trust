@@ -147,15 +147,18 @@ O fechamento de escopo do M8 (`CHANGELOG.md`, "M8 fechado: escopo") segue sem co
 
 ## Venda de dados (coop-a + VendaDados) — implementada pelo agente, sem confirmação do Juan
 
-Detalhe e números: `CHANGELOG.md` (entrada "Venda de dados: estado em 2026-10-18") e `docs/SYNC.md`.
+Detalhe e números: `CHANGELOG.md` (entradas "Venda de dados: estado em 2026-10-18" e "Venda de dados: fluxo do
+dinheiro e acesso aos dados em 2026-10-19") e `docs/SYNC.md`.
 Nada aqui está marcado como testado e confirmado: o que existe são rodadas do agente.
 
 - **Quantidade do lote (coop-a):** `quantityLiters` opcional em `POST /lote` vira `:quantityMilliliters`
   (mL); `HoneyBatchQuantityShape`; `amount` real no `createAsset` e no retry. Fora do hash. coop-b sem
   quantidade nem entrega.
 - **`VendaDados.sol`** (`contracts/venda-dados/`): cotas por mL entregue (ERC20 não transferível),
-  pagamento retido e liberado, reembolso, repartição O(1). 45 testes no Hardhat com mutações. Roda no node
-  local 8546 (chainId 31337, efêmero) com `MockUSDT`; não implantado em rede real.
+  pagamento retido e liberado, reembolso, repartição O(1), view `saldoTotalSacavel(conta)` (saldo assentado
+  + pendente; a `saldoSacavel` pública não inclui o pendente). 54 testes no Hardhat com mutações. **Só roda
+  no node local efêmero (8546, chainId 31337) com `MockUSDT`; não está implantado em rede real.** A Sepolia é
+  a rede decidida para a demo (informada pelo Juan), **ainda não implantada**: nada foi publicado nela.
 - **Entrega (coop-a):** `POST /lote` com quantidade registra a entrega no VendaDados
   (`deliveryStatus`); `DeliveryTask` em recurso separado; `POST /delivery/retry`. Carteira custodial por
   produtor em disco (só rede de teste).
@@ -164,6 +167,24 @@ Nada aqui está marcado como testado e confirmado: o que existe são rodadas do 
 - **Leitura do pagamento:** `GET /data-contract/{ref}/payment` (`not_paid`, `paid`, `mismatch`,
   `outside_window`, `released`, `refunded`), lendo `depositos(ref)` sem chave; janela em UTC pelo
   timestamp do bloco.
+- **Liberação do pagamento (coop-a):** `POST /data-contract/{ref}/release` só libera com status `paid`
+  (confere o chainId antes de assinar `liberar`); `already_released` idempotente; 409 `not_payable` com o
+  status nos demais casos; mutações verificadas. Helper `delivery.load_coop_account()` (chave da cooperativa).
+- **Saque em nome do produtor (coop-a):** `POST /producers/{did}/withdraw` com a chave custodial; nunca cria
+  chave; reposição de gás só em rede de teste (`PRODUCER_GAS_TOPUP_WEI`); `nothing_to_withdraw` sem
+  transação; 503 com mensagem fixa.
+- **Acesso aos dados (verifier-demo):** `POST /data-access/challenge/{ref}` e `GET /data-access/{lote}` com
+  desafio EIP-191 assinado pela carteira do `buyerWallet`; 401 / 403 `forbidden_wallet` / 402
+  `payment_required`; nonce de uso único com prazo (`CHALLENGE_TTL_SECONDS`, padrão 300 s), em memória; o
+  `GET /data-contract/{ref}/payment` do coop-a devolve também o `buyerWallet`.
+- **Teste de ponta a ponta:** dois produtores (1500 e 500 mL), repartição 6750000 / 2250000 e 1000000 da
+  cooperativa, saques, mais o cenário de reembolso. Precisa da Besu e do node 8546.
+- **Limites:** um contrato pago libera qualquer lote; o dado é entregue com o pagamento retido; o sistema
+  não prova a entrega nem impede o repasse do dado; a liberação e o saque não autenticam quem chama (só
+  rede local de demo, e isso precisa ser dito na demo). Ver `docs/known-issues.md`.
+- **Rodada mais recente do agente (2026-10-19; sem confirmação do Juan):**
+  `1 failed, 108 passed, 8 deselected in 307.08s (0:05:07)`; a única falha é o teste de schema, vermelho de
+  propósito.
 - **URLs de conexão em `127.0.0.1`** (testes, `CERTIFIER_URL`, scripts, `.env.example`): suíte de
   ~10–11 min para ~3,5 min. `did:web`, `BASE_URL` e `aud` não mudaram.
 

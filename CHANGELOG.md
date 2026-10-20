@@ -887,3 +887,71 @@ padrão (`-m node_parado`, exigem o node 8546 parado).
 
 **Limites e pendências:** `docs/known-issues.md` (carteiras custodiais, corrida em `POST /data-contract`,
 datas legadas sem fuso, `.owl` defasado) e `docs/SYNC.md`.
+
+## Venda de dados: fluxo do dinheiro e acesso aos dados em 2026-10-19 (executada pelo agente)
+
+Sem confirmação do Juan: nada abaixo está marcado como "testado e confirmado". Os resultados são das
+rodadas do agente; o detalhe por tarefa está em `docs/SYNC.md`. A entrada de 2026-10-18 acima não foi
+alterada. Esta continua a venda de dados: depois da entrega, do Contrato de Dados e da leitura do
+pagamento, entram a liberação, o saque, o acesso aos dados e o teste de ponta a ponta.
+
+1. **`saldoTotalSacavel(conta)` no `VendaDados`.** View que soma o saldo assentado (`saldoSacavel`) e o
+   rendimento pendente das cotas desde o checkpoint, com a mesma aritmética do `_assentar`. A view pública
+   `saldoSacavel` NÃO inclui o pendente, que só entra no saldo quando `_assentar` roda; por isso o saque
+   usa a nova view para saber quanto a carteira recebe. 54 testes no Hardhat, com mutações verificadas.
+   O contrato implantado no node precisa ter essa view: depois de mudar o contrato, reimplante o node de
+   teste (o saque responde `nothing_to_withdraw` com base nela).
+2. **Saque em nome do produtor (coop-a).** `POST /producers/{producerDID}/withdraw`: a cooperativa usa a
+   chave custodial do produtor (só a lê; nunca cria chave: DID sem carteira dá 404 `not_found`), lê
+   `saldoTotalSacavel` e, se for zero, responde `nothing_to_withdraw` sem nenhuma transação. Se faltar gás
+   nativo na carteira, a cooperativa repõe (`PRODUCER_GAS_TOPUP_WEI`, padrão 0,001 ETH; só rede de teste).
+   A carteira assina `sacar()` e o USDT vai para ela; `amount` é o que a carteira de fato recebeu. Falhas
+   (node fora, chainId, revert, timeout) dão 503 `service_unavailable` com mensagem fixa; o log traz só a
+   etapa, o tipo da exceção e o endereço público. Lock por processo.
+3. **Liberação do pagamento (coop-a).** `POST /data-contract/{contractRef}/release`, na ordem: ref sem
+   contrato 404 `not_found`; lê o depósito e calcula o status com o mesmo `payment_status` da leitura do
+   pagamento (sem segunda precedência); `released` dá 200 `already_released` (idempotente, sem transação);
+   qualquer status diferente de `paid` dá 409 `not_payable` com o status, sem transação; só com `paid`
+   confere o chainId e então a cooperativa assina `liberar(ref)` e responde 200 `released` com `txHash`.
+   Mutações verificadas: sem a checagem "só com `paid`", o depósito de outra carteira era liberado (200
+   `released`); assinando antes de ler o estado, 9 cenários falham. Helper único
+   `delivery.load_coop_account()` para a chave da cooperativa (carrega a chave; a conferência de chainId
+   continua onde estava). Lock por `contractRef`, por processo.
+4. **Acesso aos dados (verifier-demo).** `POST /data-access/challenge/{contractRef}` emite `{nonce,
+   message}` (a mensagem contém o contractRef, o nonce e "verifier-demo"); 404 se o coop-a não conhece o
+   contrato, 503 de mensagem fixa se o coop-a estiver fora. `GET /data-access/{lote}` exige
+   `X-Data-Contract`, `X-Challenge-Nonce`, `X-Challenge-Signature` (EIP-191 da mensagem, pela carteira do
+   `buyerWallet`) e `X-Access-Purpose`. Ordem: 401 (cabeçalho ausente, nonce desconhecido, expirado, já
+   usado ou de outro contractRef, assinatura malformada); 403 `forbidden_wallet` (assinatura válida de
+   outra carteira); 402 `payment_required` com o status (qualquer um que não seja `paid` ou `released`);
+   só então chama `verify_batch` (o mesmo corpo do `GET /verify`, que não mudou). Nonce de uso único,
+   consumido na primeira apresentação (inclusive em 402 e 403), com prazo `CHALLENGE_TTL_SECONDS` (padrão
+   300 s), em memória do processo. `GET /data-contract/{ref}/payment` do coop-a passou a devolver também o
+   `buyerWallet` (mudança aditiva). `eth-account` declarado em `verifier-demo/requirements.txt`. Mutações
+   verificadas: sem a conferência da carteira, sem consumir o nonce, sem a checagem de pagamento, sem o
+   tratamento da assinatura malformada (500) e sem a expiração; cada uma é pega por um cenário.
+5. **Teste de ponta a ponta** (`venda_dados_ponta_a_ponta.feature`, dois cenários, precisa da Besu e do
+   node 8546): dois produtores sintéticos entregam lotes de 1500 mL e 500 mL por `POST /lote` real
+   (ancorados e com entrega registrada); Contrato de Dados de 10000000 unidades; 402 `not_paid` antes de
+   pagar; depósito do comprador (`paid`); acesso 200 com o pagamento retido, com o mesmo corpo do
+   `GET /verify`; `released` e depois `already_released`; repartição 6750000 e 2250000 para os produtores
+   e 1000000 para a cooperativa (parte de 10%, soma 10000000); saques com o `amount` esperado e depois
+   `nothing_to_withdraw`. Segundo cenário: venda reembolsada (`refunded`, acesso 402 `refunded`, nenhum
+   saque). A allowlist do `tests/conftest.py` ganhou o prefixo `MS-2026-VENDA`.
+
+**Suíte (rodada mais recente do agente, 2026-10-19):** `1 failed, 108 passed, 8 deselected in 307.08s
+(0:05:07)`. A única falha é `test_schema_sincronizado`, vermelha de propósito: o `update_schema.py` não foi
+rodado desde as mudanças de shape. Os 8 deselecionados são os 3 `@futuro`, os `@node_parado` (entrega,
+leitura do pagamento, saque, liberação) e o `@coop_a_parado` (marcador novo em `pytest.ini`, exige o
+coop-a parado).
+
+**Limites (resumo; detalhe em `docs/known-issues.md`):**
+- Um Contrato de Dados pago libera o acesso a QUALQUER lote: o contrato não amarra o lote.
+- O dado é entregue com o pagamento retido; se a cooperativa não liberar, o comprador pode recuperar o valor
+  depois do prazo já tendo recebido o dado. O sistema não impede o comprador de repassar o dado.
+- A liberação e o saque movem dinheiro e NÃO autenticam quem chama (mesmo limite de "sem autenticação entre
+  nós", agora com efeito financeiro): aceitável só em rede local de demo, e isso precisa ser dito na demo.
+- O sistema não prova que o dado foi entregue; a liberação é um ato de confiança da cooperativa.
+- Os locks (liberação, saque) e o store de nonces são por processo e em memória; o guarda real contra pagar
+  duas vezes é o contrato.
+- O `VendaDados` só roda no node local efêmero (8546, `MockUSDT`); não está implantado em rede real.

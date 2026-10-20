@@ -42,12 +42,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 # não no lab) e quebra o bloco 'nada a processar' de ancoragem_outbox.feature /
 # ancoragem_outbox_lab.feature / ancoragem_outbox_certifier.feature (e, no certifier,
 # faz o POST /credential do lote responder 409 na rodada seguinte). (OUTBOX[1-5] = tests de coop-a/coop-b;
-# LABOUT[1-6] = tests do lab; CERTOUT[1-6] = tests do certifier.)
+# LABOUT[1-6] = tests do lab; CERTOUT[1-6] = tests do certifier; VENDA = teste de ponta a ponta da venda
+# de dados, venda_dados_ponta_a_ponta.feature.)
 _TEST_BATCH_PATTERN = (
     r"^(MN-2026-015|MS-2026-042|MS-2026-042-LAB-REJEITADO"
     r"|MS-2026-042-REEMISSAO-.+|MEL-SILVESTRE-.+"
     r"|MN-2026-(MELIP|MELIP-SEMLIC|REUSE1|REUSE2)-.+"
-    r"|MS-2026-(ANCCERT|ANCLAUDO|ANCORA|QTD|ENTREGA|APRESVP|HOLDERVC|VALIDAVP|VERIFYOC|OUTBOX[1-5]|LABOUT[1-6]|CERTOUT[1-6])-.+)$"
+    r"|MS-2026-(ANCCERT|ANCLAUDO|ANCORA|QTD|ENTREGA|VENDA|APRESVP|HOLDERVC|VALIDAVP|VERIFYOC|OUTBOX[1-5]|LABOUT[1-6]|CERTOUT[1-6])-.+)$"
 )
 # LAB: tarefas da allowlist, órfãs ou não (ver docstring do módulo).
 _ALLOWLISTED_TASKS_UPDATE = """

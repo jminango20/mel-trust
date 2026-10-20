@@ -31,6 +31,8 @@ ABI = [
      "inputs": [{"name": "ref", "type": "bytes32"}, {"name": "valor", "type": "uint256"}], "outputs": []},
     {"type": "function", "name": "reembolsar", "stateMutability": "nonpayable",
      "inputs": [{"name": "ref", "type": "bytes32"}], "outputs": []},
+    {"type": "function", "name": "saldoTotalSacavel", "stateMutability": "view",
+     "inputs": [{"name": "conta", "type": "address"}], "outputs": [{"name": "", "type": "uint256"}]},
 ]
 ERC20_ABI = [
     {"type": "function", "name": "mint", "stateMutability": "nonpayable",
@@ -38,6 +40,8 @@ ERC20_ABI = [
     {"type": "function", "name": "approve", "stateMutability": "nonpayable",
      "inputs": [{"name": "spender", "type": "address"}, {"name": "value", "type": "uint256"}],
      "outputs": [{"name": "", "type": "bool"}]},
+    {"type": "function", "name": "balanceOf", "stateMutability": "view",
+     "inputs": [{"name": "account", "type": "address"}], "outputs": [{"name": "", "type": "uint256"}]},
 ]
 
 
@@ -81,12 +85,12 @@ def coop():
     return Account.from_key("0x" + COOP_KEY_PATH.read_text(encoding="utf-8").strip())
 
 
-def post_contract(valid_from: datetime, valid_until: datetime) -> tuple[str, dict]:
+def post_contract(valid_from: datetime, valid_until: datetime, price: int = PRICE) -> tuple[str, dict]:
     """POST /data-contract com consumidor sintético ConsumidorTeste-<12 hex> e comprador = conta nº 1."""
     terms = {
         "consumer": f"ConsumidorTeste-{uuid.uuid4().hex[:12]}",
         "purpose": "Compliance EUDR",
-        "priceUnits": PRICE,
+        "priceUnits": price,
         "buyerWallet": Account.from_key(BUYER_KEY).address,
         "validFrom": iso(valid_from),
         "validUntil": iso(valid_until),
