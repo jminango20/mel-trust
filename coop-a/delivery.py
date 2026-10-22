@@ -79,14 +79,38 @@ def venda_dados_config() -> tuple[str, int, str | None]:
     return rpc, chain_id, address
 
 
+class RpcUnavailable(RuntimeError):
+    """RPC do VendaDados inalcançável. O texto da exceção da biblioteca (requests/web3) traz a URL do RPC,
+    que numa rede pública pode levar chave de API; aqui `str()` traz só o TIPO da falha original."""
+
+    def __init__(self, cause_type: str):
+        super().__init__(f"RPC do VendaDados indisponível ({cause_type})")
+        self.cause_type = cause_type
+
+
+def error_type(exc: BaseException) -> str:
+    """Nome do tipo para o log: o da falha original quando o RPC estava inalcançável, senão o da exceção."""
+    return getattr(exc, "cause_type", None) or type(exc).__name__
+
+
+def checked_web3(rpc: str, chain_id: int) -> Web3:
+    """Web3 ligado ao RPC do VendaDados, com o chainId conferido (antes de qualquer assinatura).
+    As mensagens de erro nunca levam o RPC (URL, host, chave): só o tipo da falha e os chainIds."""
+    try:
+        w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))
+        got = w3.eth.chain_id  # levanta se o node estiver fora
+    except Exception as exc:  # noqa: BLE001 - o texto da exceção carrega a URL: fica só o tipo
+        raise RpcUnavailable(type(exc).__name__) from None
+    if got != chain_id:
+        raise RuntimeError(f"chainId {got} diferente do esperado {chain_id} no RPC do VendaDados")
+    return w3
+
+
 def _contract():
     rpc, chain_id, address = venda_dados_config()
     if not address:
         raise RuntimeError("VENDA_DADOS_ADDRESS não configurado (nem deployments/local.json)")
-    w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))
-    got = w3.eth.chain_id  # levanta se o node estiver fora
-    if got != chain_id:
-        raise RuntimeError(f"chainId {got} em {rpc}, esperado {chain_id}")
+    w3 = checked_web3(rpc, chain_id)
     return w3, w3.eth.contract(address=Web3.to_checksum_address(address), abi=_ABI)
 
 
@@ -284,7 +308,7 @@ def deliver_on_post_lote(batch_number: str | None, producer_did: str | None, mil
             body["deliveryTxHash"] = tx_hash
         return body
     except Exception as exc:  # noqa: BLE001 - lote já inserido; a tarefa pending fica para o retry
-        logger.error("POST /lote: entrega do lote %r no VendaDados falhou: %s", batch_number, exc)
+        logger.error("POST /lote: entrega do lote %r no VendaDados falhou (%s)", batch_number, error_type(exc))
         return {"deliveryStatus": "pending", "deliveryError": DELIVERY_ERROR_MSG}
 
 
@@ -318,7 +342,7 @@ def retry_delivery():
                 write_delivery_task(batch_number, "registered", tx_hash)
                 results.append({"batchNumber": batch_number, "txHash": tx_hash, "outcome": outcome})
         except Exception as exc:  # noqa: BLE001 - uma tarefa com erro não interrompe as outras
-            logger.error("Retry de entrega: erro no lote %r: %s", batch_number, exc)
+            logger.error("Retry de entrega: erro no lote %r (%s)", batch_number, error_type(exc))
             results.append({"batchNumber": batch_number, "txHash": None, "outcome": "failed",
                             "error": DELIVERY_ERROR_MSG})
     return {"processed": len(results), "results": results}

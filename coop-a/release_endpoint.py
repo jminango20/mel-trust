@@ -85,5 +85,5 @@ def release(contract_ref: str):
                 return _error(404, "not_found", "contrato não encontrado")
             return _liberar(contract_ref, terms)
     except Exception as exc:  # noqa: BLE001 - Fuseki/node fora, chainId, revert, timeout: 503 fixo; só o TIPO vai ao log
-        logger.error("liberação %s: falha (%s)", contract_ref, type(exc).__name__)
+        logger.error("liberação %s: falha (%s)", contract_ref, delivery.error_type(exc))
     return _error(503, "service_unavailable", SERVICE_UNAVAILABLE_MSG)

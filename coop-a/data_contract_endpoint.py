@@ -230,9 +230,7 @@ def _read_deposit(ref: str) -> tuple[str, int, int, int]:
     rpc, chain_id, address = delivery.venda_dados_config()
     if not address:
         raise RuntimeError("VendaDados sem endereço configurado")
-    w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))
-    if w3.eth.chain_id != chain_id:
-        raise RuntimeError(f"chainId {w3.eth.chain_id} em {rpc}, esperado {chain_id}")
+    w3 = delivery.checked_web3(rpc, chain_id)
     contract = w3.eth.contract(address=Web3.to_checksum_address(address), abi=_DEPOSITOS_ABI)
     comprador, valor, depositado_em, estado = contract.functions.depositos(bytes.fromhex(ref[2:])).call()
     return comprador, valor, depositado_em, estado
@@ -252,7 +250,8 @@ def get_data_contract_payment(contract_ref: str):
     try:
         comprador, valor, depositado_em, estado = _read_deposit(contract_ref)
     except Exception as exc:  # noqa: BLE001 - node parado, RPC lento, revert, chainId errado: tudo vira 503 fixo
-        logger.error("GET /data-contract/%s/payment: leitura do VendaDados falhou: %s", contract_ref, exc)
+        logger.error("GET /data-contract/%s/payment: leitura do VendaDados falhou (%s)", contract_ref,
+                     delivery.error_type(exc))
         return _error(503, "service_unavailable", SERVICE_UNAVAILABLE_MSG)
     return {"contractRef": contract_ref, "buyerWallet": terms["buyerWallet"],
             "status": payment_status(estado, comprador, valor, depositado_em, terms)}
