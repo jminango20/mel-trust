@@ -10,8 +10,10 @@ leitura GET .../payment: aqui não há segunda precedência):
   4. qualquer status diferente de "paid"                => 409 {"error": "not_payable", "status": <status>}, sem transação.
   5. "paid": confere o chainId (`delivery._contract`) e SÓ ENTÃO a cooperativa assina `liberar(ref)`,
      espera o recibo e responde 200 {"status": "released", "txHash"}.
+  6. Recibo que não veio no prazo (RECEIPT_TIMEOUT_S, ver `delivery.receipt_wait`) DEPOIS de a transação ter
+     sido enviada => 202 {"status": "pending", "operation": "release", "txHash"}. Não prova que minerou.
 
-Erros: node fora, chainId errado, revert, recibo em timeout, Fuseki fora => 503 {"error":
+Erros: node fora, chainId errado, revert, Fuseki fora => 503 {"error":
 "service_unavailable"} com mensagem FIXA. O log registra só a ref (pública) e o TIPO da exceção:
 nunca a chave, o caminho dela nem o texto da exceção.
 
@@ -69,7 +71,12 @@ def _liberar(ref: str, terms: dict) -> JSONResponse:
     coop = delivery.load_coop_account()
     tx = venda.functions.liberar(bytes.fromhex(ref[2:])).build_transaction(
         {"from": coop.address, "nonce": w3.eth.get_transaction_count(coop.address, "pending"), "chainId": w3.eth.chain_id})
-    receipt = _send(w3, coop, tx)  # levanta se reverteu ou não minerou
+    try:
+        receipt = _send(w3, coop, tx)  # levanta se reverteu ou não minerou
+    except delivery.ReceiptPending as pending:  # liberar() enviado, recibo não veio no prazo: 202 com o txHash
+        logger.warning("liberação %s: recibo não veio no prazo (%s)", ref, delivery.error_type(pending))
+        return JSONResponse(status_code=202, content={"status": "pending", "operation": "release",
+                                                       "txHash": pending.tx_hash})
     return JSONResponse(status_code=200, content={"status": "released",
                                                   "txHash": "0x" + receipt.transactionHash.hex().removeprefix("0x")})
 

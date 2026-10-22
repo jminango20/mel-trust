@@ -27,6 +27,7 @@ DECISÕES (ver tests/step_defs/test_venda_dados_entrega.py):
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 from pathlib import Path
@@ -53,7 +54,8 @@ BESU_KEY_VAR = "BESU_KEY_PATH"
 LOCAL_TEST_CHAIN_ID = 31337  # única rede em que a chave da Besu pode servir de chave da cooperativa
 _DEPLOY_JSON = _THIS_DIR.parent / "contracts" / "venda-dados" / "deployments" / "local.json"
 
-RECEIPT_TIMEOUT_S = 60
+DEFAULT_RECEIPT_TIMEOUT_S = 60.0
+DEFAULT_RECEIPT_POLL_S = 0.1  # o padrão do web3 (poll_latency)
 
 # Mensagem fixa nas respostas HTTP: o texto da exceção (URL do RPC, caminhos, etc.) só vai ao log.
 DELIVERY_ERROR_MSG = "entrega pendente: rede fora do ar ou transação recusada"
@@ -77,6 +79,37 @@ def venda_dados_config() -> tuple[str, int, str | None]:
     if not address and _DEPLOY_JSON.exists():
         address = json.loads(_DEPLOY_JSON.read_text(encoding="utf-8")).get("vendaDados")
     return rpc, chain_id, address
+
+
+def _positive_float(name: str) -> float | None:
+    """Valor da variável de ambiente como float finito e > 0; ausente, texto, zero, negativo ou nan/inf => None."""
+    try:
+        value = float(os.environ[name])
+    except (KeyError, ValueError):
+        return None
+    return value if math.isfinite(value) and value > 0 else None
+
+
+def receipt_wait() -> tuple[float, float]:
+    """(prazo, intervalo) em segundos da espera do recibo, de RECEIPT_TIMEOUT_S e RECEIPT_POLL_S, lidos A CADA
+    chamada. Padrão 60 e 0.1. Valor inválido (texto, zero, negativo) cai no padrão; intervalo maior que o prazo
+    é incoerente e derruba os DOIS para o padrão."""
+    timeout = _positive_float("RECEIPT_TIMEOUT_S") or DEFAULT_RECEIPT_TIMEOUT_S
+    poll = _positive_float("RECEIPT_POLL_S") or DEFAULT_RECEIPT_POLL_S
+    if poll > timeout:
+        return DEFAULT_RECEIPT_TIMEOUT_S, DEFAULT_RECEIPT_POLL_S
+    return timeout, poll
+
+
+class ReceiptPending(RuntimeError):
+    """A transação FOI enviada, mas o recibo não veio no prazo (web3 TimeExhausted). Carrega o txHash. Não prova
+    que a transação minerou: ela pode ainda entrar, ser substituída ou ser descartada. `cause_type` é o tipo
+    que o log registra (`error_type`); o texto da exceção original (que pode trazer a URL) é descartado."""
+    cause_type = "TimeExhausted"
+
+    def __init__(self, tx_hash: str):
+        super().__init__("recibo não veio no prazo")
+        self.tx_hash = tx_hash
 
 
 class RpcUnavailable(RuntimeError):
@@ -276,7 +309,8 @@ def deliver(batch_number: str, producer_did: str, milliliters: int) -> tuple[str
     signed = coop.sign_transaction(tx)
     raw = getattr(signed, "raw_transaction", None) or signed.rawTransaction
     tx_hash = w3.eth.send_raw_transaction(raw)
-    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=RECEIPT_TIMEOUT_S)
+    timeout, poll = receipt_wait()
+    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=timeout, poll_latency=poll)
     if receipt.status != 1:
         raise RuntimeError(f"registrarEntrega reverteu (tx {tx_hash.hex()})")
     return "sent", "0x" + tx_hash.hex().removeprefix("0x"), None

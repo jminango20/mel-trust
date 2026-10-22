@@ -16,7 +16,11 @@ Fluxo (nunca usa `get_or_create_wallet`: este endpoint NÃO cria chave):
      {"status": "withdrawn", "amount", "txHash"}. `amount` é o que a carteira REALMENTE recebeu
      (diferença do saldo de USDT antes e depois), não o estimado.
 
-Erros: node fora, chainId errado, revert, recibo em timeout, qualquer falha => 503
+Recibo do `sacar()` que não veio no prazo (RECEIPT_TIMEOUT_S, ver `delivery.receipt_wait`) DEPOIS de a transação
+ter sido enviada => 202 {"status": "pending", "operation": "withdraw", "txHash"} (sem `amount`; não prova que
+minerou). O timeout na reposição de gás continua 503: o `sacar()` não chega a ser enviado.
+
+Erros: node fora, chainId errado, revert, recibo da reposição de gás em timeout, qualquer falha => 503
 {"error": "service_unavailable"} com mensagem FIXA. O log registra só a etapa, o tipo da exceção e o
 endereço (público) da carteira: nunca a chave, o caminho dela nem o texto da exceção.
 
@@ -30,6 +34,7 @@ import threading
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from web3 import Web3
+from web3.exceptions import TimeExhausted
 
 import delivery
 
@@ -68,10 +73,17 @@ def _error(status_code: int, error: str, description: str) -> JSONResponse:
 
 
 def _send(w3: Web3, account, tx: dict):
-    """Assina com `account`, envia e espera o recibo (levanta se não minerou ou reverteu)."""
+    """Assina com `account`, envia e espera o recibo (prazo e intervalo de `delivery.receipt_wait()`).
+    Levanta `_Falha` se reverteu e `delivery.ReceiptPending(txHash)` se o web3 estourou o prazo (TimeExhausted)
+    DEPOIS de a transação ter sido enviada; quem chama decide se isso vira 202 ou 503."""
     signed = account.sign_transaction(tx)
     raw = getattr(signed, "raw_transaction", None) or signed.rawTransaction
-    receipt = w3.eth.wait_for_transaction_receipt(w3.eth.send_raw_transaction(raw), timeout=delivery.RECEIPT_TIMEOUT_S)
+    tx_hash = w3.eth.send_raw_transaction(raw)
+    timeout, poll = delivery.receipt_wait()
+    try:
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=timeout, poll_latency=poll)
+    except TimeExhausted:  # o texto da exceção é descartado (pode trazer a URL do RPC)
+        raise delivery.ReceiptPending("0x" + tx_hash.hex().removeprefix("0x")) from None
     if receipt.status != 1:
         raise _Falha("transacao_revertida")
     return receipt
@@ -112,7 +124,12 @@ def _withdraw(account) -> dict:
     tx = venda.functions.sacar().build_transaction({
         "from": account.address, "nonce": w3.eth.get_transaction_count(account.address, "pending"), "chainId": chain_id,
     })
-    receipt = _send(w3, account, tx)
+    try:
+        receipt = _send(w3, account, tx)
+    except delivery.ReceiptPending as pending:  # sacar() enviado, recibo não veio: 202 (a reposição de gás NÃO passa por aqui)
+        logger.warning("saque: recibo não veio no prazo (%s) (carteira %s)", delivery.error_type(pending), account.address)
+        return JSONResponse(status_code=202, content={"status": "pending", "operation": "withdraw",
+                                                       "txHash": pending.tx_hash})
     amount = usdt.functions.balanceOf(account.address).call() - usdt_antes
     return {"status": "withdrawn", "amount": amount, "txHash": "0x" + receipt.transactionHash.hex().removeprefix("0x")}
 
@@ -128,5 +145,5 @@ def withdraw(producer_did: str):
     except _Falha as exc:
         logger.error("saque: falha na etapa %s (carteira %s)", exc.etapa, account.address)
     except Exception as exc:  # noqa: BLE001 - node fora, revert, timeout...: 503 fixo; só o TIPO da exceção vai ao log
-        logger.error("saque: falha (%s) (carteira %s)", type(exc).__name__, account.address)
+        logger.error("saque: falha (%s) (carteira %s)", delivery.error_type(exc), account.address)
     return _error(503, "service_unavailable", SERVICE_UNAVAILABLE_MSG)
