@@ -955,3 +955,6 @@ coop-a parado).
 - Os locks (liberação, saque) e o store de nonces são por processo e em memória; o guarda real contra pagar
   duas vezes é o contrato.
 - O `VendaDados` só roda no node local efêmero (8546, `MockUSDT`); não está implantado em rede real.
+- Reembolso: não existe rota no coop-a. No teste de ponta a ponta a cooperativa chama `reembolsar` direto no
+  contrato; o sistema só lê o resultado (status `refunded`). O comprador pode recuperar o valor sozinho
+  depois do prazo (`recuperarReembolso`), também direto no contrato.

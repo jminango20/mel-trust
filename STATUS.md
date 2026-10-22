@@ -181,7 +181,10 @@ Nada aqui está marcado como testado e confirmado: o que existe são rodadas do 
   cooperativa, saques, mais o cenário de reembolso. Precisa da Besu e do node 8546.
 - **Limites:** um contrato pago libera qualquer lote; o dado é entregue com o pagamento retido; o sistema
   não prova a entrega nem impede o repasse do dado; a liberação e o saque não autenticam quem chama (só
-  rede local de demo, e isso precisa ser dito na demo). Ver `docs/known-issues.md`.
+  rede local de demo, e isso precisa ser dito na demo). Reembolso: não existe rota no coop-a; no teste de
+  ponta a ponta a cooperativa chama `reembolsar` direto no contrato e o sistema só lê o resultado (status
+  `refunded`); o comprador pode recuperar o valor sozinho depois do prazo (`recuperarReembolso`), também
+  direto no contrato. Ver `docs/known-issues.md`.
 - **Rodada mais recente do agente (2026-10-19; sem confirmação do Juan):**
   `1 failed, 108 passed, 8 deselected in 307.08s (0:05:07)`; a única falha é o teste de schema, vermelho de
   propósito.
