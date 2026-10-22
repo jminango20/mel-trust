@@ -18,9 +18,11 @@ DECISÕES (ver tests/step_defs/test_venda_dados_entrega.py):
   dados DIFERENTES, mismatch (nunca registered, reexaminado a cada retry).
 - Config (env): VENDA_DADOS_RPC_URL (default http://127.0.0.1:8546),
   VENDA_DADOS_ADDRESS (senão contracts/venda-dados/deployments/local.json),
-  VENDA_DADOS_CHAIN_ID (default 31337). O chainId é conferido ANTES de assinar:
-  a cooperativa usa a MESMA chave da Besu, então enviar para a rede errada seria
-  um erro silencioso.
+  VENDA_DADOS_CHAIN_ID (default 31337). O chainId é conferido ANTES de assinar.
+  Chave da cooperativa: VENDA_DADOS_COOP_KEY_PATH (própria). Sem ela, a chave da Besu
+  (BESU_KEY_PATH) só vale no chainId 31337 (rede de teste local, onde a cooperativa
+  reaproveita a chave da Besu); em outro chainId `load_coop_account` recusa, e também
+  recusa se a chave própria for a da Besu (mesmo arquivo ou mesmo endereço).
 """
 import hashlib
 import json
@@ -45,7 +47,10 @@ ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 _THIS_DIR = Path(__file__).resolve().parent
 PRODUCERS_KEY_DIR = Path(os.environ.get("PRODUCERS_KEY_DIR", _THIS_DIR / "keys" / "producers"))
-COOP_KEY_PATH = Path(os.environ.get("BESU_KEY_PATH", _THIS_DIR / "keys" / "coop-a-besu.key"))
+_DEFAULT_BESU_KEY_PATH = _THIS_DIR / "keys" / "coop-a-besu.key"
+COOP_KEY_VAR = "VENDA_DADOS_COOP_KEY_PATH"
+BESU_KEY_VAR = "BESU_KEY_PATH"
+LOCAL_TEST_CHAIN_ID = 31337  # única rede em que a chave da Besu pode servir de chave da cooperativa
 _DEPLOY_JSON = _THIS_DIR.parent / "contracts" / "venda-dados" / "deployments" / "local.json"
 
 RECEIPT_TIMEOUT_S = 60
@@ -91,9 +96,55 @@ def _key_path(producer_did: str) -> Path:
     return PRODUCERS_KEY_DIR / (hashlib.sha256(producer_did.encode("utf-8")).hexdigest() + ".key")
 
 
+class CoopKeyError(RuntimeError):
+    """Chave da cooperativa recusada ou inutilizável. A mensagem cita só o NOME da variável de
+    ambiente: nunca o caminho do arquivo, o conteúdo da chave nem o endereço."""
+
+
+def _read_key_account(var: str, path: str):
+    """Conta da chave no arquivo `path` (vindo da variável `var`). Arquivo inexistente, ilegível e
+    conteúdo inválido dão o MESMO erro; o motivo original fica só na causa interna, que a mensagem
+    (e `raise ... from None`) não expõe."""
+    try:
+        return Account.from_key("0x" + Path(path).read_text(encoding="utf-8").strip())
+    except Exception:  # noqa: BLE001 - qualquer falha de leitura/parse vira a mesma mensagem fixa
+        raise CoopKeyError(f"chave da cooperativa ausente, ilegível ou inválida ({var})") from None
+
+
 def load_coop_account():
-    """Conta (eth_account) da cooperativa, lida de COOP_KEY_PATH (coop-a-besu.key). Só LÊ."""
-    return Account.from_key("0x" + COOP_KEY_PATH.read_text(encoding="utf-8").strip())
+    """Conta (eth_account) da cooperativa no VendaDados. Só LÊ; o ambiente é lido a CADA chamada.
+
+    - `VENDA_DADOS_COOP_KEY_PATH` definida: vale a chave dela. Fora do chainId 31337 ela tem de ser
+      SEPARADA da chave da Besu (`BESU_KEY_PATH`): mesmo arquivo, ou chaves que derivam o mesmo
+      endereço, são recusados.
+    - Não definida: cai na chave da Besu SÓ no chainId 31337 (rede de teste local, como antes);
+      em qualquer outro chainId recusa, para a chave da Besu nunca assinar numa rede pública.
+    """
+    chain_id = venda_dados_config()[1]
+    own = os.environ.get(COOP_KEY_VAR)
+    besu = os.environ.get(BESU_KEY_VAR) or str(_DEFAULT_BESU_KEY_PATH)
+
+    if not own:
+        if chain_id != LOCAL_TEST_CHAIN_ID:
+            raise CoopKeyError(f"chainId {chain_id} exige uma chave própria da cooperativa em {COOP_KEY_VAR}; "
+                               f"a chave da Besu ({BESU_KEY_VAR}) só vale no chainId {LOCAL_TEST_CHAIN_ID}")
+        return _read_key_account(BESU_KEY_VAR, besu)
+
+    if chain_id == LOCAL_TEST_CHAIN_ID:
+        return _read_key_account(COOP_KEY_VAR, own)
+
+    mesma_chave = (f"{COOP_KEY_VAR} e {BESU_KEY_VAR} apontam para a mesma chave; "
+                   f"fora do chainId {LOCAL_TEST_CHAIN_ID} a chave da cooperativa deve ser separada da Besu")
+    if os.path.normcase(os.path.realpath(own)) == os.path.normcase(os.path.realpath(besu)):
+        raise CoopKeyError(mesma_chave)  # recusa antes de ler: a chave da Besu nem vira conta
+    account = _read_key_account(COOP_KEY_VAR, own)
+    try:
+        besu_address = _read_key_account(BESU_KEY_VAR, besu).address
+    except CoopKeyError:
+        return account  # chave da Besu ausente/ilegível: não há com o que conflitar
+    if besu_address == account.address:
+        raise CoopKeyError(mesma_chave)
+    return account
 
 
 def get_or_create_wallet(producer_did: str) -> str:
