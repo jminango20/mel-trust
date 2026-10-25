@@ -191,6 +191,40 @@ Nada aqui está marcado como testado e confirmado: o que existe são rodadas do 
 - **URLs de conexão em `127.0.0.1`** (testes, `CERTIFIER_URL`, scripts, `.env.example`): suíte de
   ~10–11 min para ~3,5 min. `did:web`, `BASE_URL` e `aud` não mudaram.
 
+### Implantação na Sepolia (2026-10-25)
+
+Executada pelo Juan na máquina dele com `contracts/venda-dados/scripts/deploy-publico.js`; os valores abaixo
+vêm de `contracts/venda-dados/deployments/sepolia.json` (que fica fora do Git).
+
+- **Rede:** Sepolia, chainId 11155111.
+- **Cooperativa (implantou e é a cooperativa imutável do contrato):**
+  `0x94107Bcf43953Bc7A5b2629D63Cd7468Ec8380Ba`.
+- **Comprador de teste:** `0xDe5F3be19ed97C766d0B7565a37B00A64DBbdFF7` (endereço público; não consta no
+  `sepolia.json`; chave gerada pelo `scripts/blockchain/gerar_chaves_rede_publica.py`).
+  https://sepolia.etherscan.io/address/0xDe5F3be19ed97C766d0B7565a37B00A64DBbdFF7
+- **MockUSDT:** `0x9D429E5e16b96Ea6eE0169A5Ea07D5E1c0729ED1`, bloco 11993283, tx
+  `0x2261c7af6e27806dddca926c90b8e5ef54302be6bc6357abcd5d3a2e72fde962`.
+  https://sepolia.etherscan.io/address/0x9D429E5e16b96Ea6eE0169A5Ea07D5E1c0729ED1
+- **VendaDados:** `0x86c4A906DfAd69BB958c0BCDfDfad415D11fD42e`, bloco 11993284, tx
+  `0xb626ebfa392126b7173b43e39c2097101e5b139707590221264b733c9c80a2eb`.
+  https://sepolia.etherscan.io/address/0x86c4A906DfAd69BB958c0BCDfDfad415D11fD42e
+- **Parâmetros:** parte da cooperativa 10%; prazo de reembolso no padrão do script (2592000 s, 30 dias).
+- **Nota:** a receita de reprodução abaixo ainda não foi testada apontando os nós para a Sepolia; é a
+  próxima etapa.
+- **Como reproduzir** (em `contracts/venda-dados`, depois de `npx hardhat compile`; só nomes, sem valores
+  secretos): `DEPLOY_REDE` (`sepolia`; o script não sobrescreve `deployments/<rede>.json`),
+  `DEPLOY_RPC_URL`, `DEPLOY_CHAIN_ID_ESPERADO` (11155111), `VENDA_DADOS_COOP_KEY_PATH`,
+  `PARTE_COOPERATIVA_PERCENTUAL`, `PRAZO_REEMBOLSO_S` (opcional), `BESU_KEY_PATH` (opcional, recusa a mesma
+  chave da Besu), `RECEIPT_TIMEOUT_S` / `RECEIPT_POLL_S` (opcionais); depois `node scripts/deploy-publico.js`.
+  Para apontar o coop-a para essa rede: `VENDA_DADOS_ADDRESS` e `VENDA_DADOS_COOP_KEY_PATH`.
+- **Limites:**
+  - O MockUSDT tem emissão livre (`mint` aberto a qualquer conta): só para teste, sem valor.
+  - A cooperativa é imutável no contrato; perder a chave dela trava `liberar` e `reembolsar` desta implantação.
+  - As chaves estão fora do repositório (no gerenciador de senhas do Juan); os `.key` do projeto são ignorados
+    pelo Git.
+  - A Sepolia está em processo de aposentadoria (cronograma em aberto): o endereço pode deixar de existir.
+  - O fluxo de ponta a ponta (depósito, liberação, saque) ainda NÃO foi rodado nela.
+
 ## Suíte de testes BDD (`tests/`)
 
 Rodada mais recente (executada pelo agente, 2026-10-18; **sem confirmação do Juan**):

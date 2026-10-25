@@ -958,3 +958,23 @@ coop-a parado).
 - Reembolso: não existe rota no coop-a. No teste de ponta a ponta a cooperativa chama `reembolsar` direto no
   contrato; o sistema só lê o resultado (status `refunded`). O comprador pode recuperar o valor sozinho
   depois do prazo (`recuperarReembolso`), também direto no contrato.
+
+## Implantação do VendaDados na Sepolia (2026-10-25)
+
+**Pedido:** implantar `MockUSDT` e `VendaDados` na rede pública de teste Sepolia com o
+`deploy-publico.js`, executada pelo Juan na máquina dele (o agente não tocou na cadeia nem nas chaves).
+
+1. **Ensaio com chainId esperado errado de propósito:** o script recusou sem enviar nada (exit code 1).
+2. **Implantação real:** terminou com exit code 0, executada pelo Juan. Resultado em
+   `contracts/venda-dados/deployments/sepolia.json` (fora do Git): chainId 11155111, `MockUSDT`
+   `0x9D429E5e16b96Ea6eE0169A5Ea07D5E1c0729ED1` (bloco 11993283), `VendaDados`
+   `0x86c4A906DfAd69BB958c0BCDfDfad415D11fD42e` (bloco 11993284), cooperativa
+   `0x94107Bcf43953Bc7A5b2629D63Cd7468Ec8380Ba`. Detalhe e como reproduzir no `STATUS.md`.
+
+**Ainda falta:**
+- Verificação independente na cadeia (conferir no explorador que o bytecode e os parâmetros batem com o
+  que foi implantado; o `sepolia.json` é só o registro do script).
+- Nós (coop-a, verifier-demo) apontados para a Sepolia.
+- Fluxo curto de depósito, liberação e saque na Sepolia.
+
+Não há "testado e confirmado" aqui além de a execução ter sido feita pelo Juan.
